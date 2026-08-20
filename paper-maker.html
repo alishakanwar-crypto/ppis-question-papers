@@ -76,9 +76,10 @@
   .qline{margin-top:2mm}
   .partline{margin:1.5mm 0 0 5mm}
   .subline{margin:1.5mm 0 0 8mm}
-  /* a sentence the child completes is printed plain, as on the school's own paper */
-  .partline.reg,.subline.reg{font-weight:normal}
-  .partline.reg .m,.subline.reg .m{font-weight:bold}
+  /* a sentence the child completes, and a reading passage typed on the question
+     line, are printed plain, as on the school's own paper */
+  .qline.reg,.partline.reg,.subline.reg{font-weight:normal}
+  .qline.reg .n,.qline.reg .m,.partline.reg .m,.subline.reg .m{font-weight:bold}
   .qline .n,.partline .n,.subline .n{white-space:nowrap}
   .qline .t,.partline .t,.subline .t{flex:1}
   .m{white-space:nowrap;text-align:right;font-weight:bold;padding-left:3mm}
@@ -166,8 +167,9 @@ Write the answers in the space provided.</textarea></div>
       <p class="hint"><b>Save as PDF:</b> the print window opens — choose <i>Destination: Save as PDF</i>, paper size A4,
         and switch <i>Headers and footers</i> off. To print copies for the class, choose the printer instead.</p>
       <p class="hint">The checker catches mechanical and structural mistakes — spacing, punctuation, numbering, marks
-        that do not add up, repeated questions, common misspellings. It is not a substitute for reading the paper: it
-        cannot tell you that an answer is wrong or a question is unfair.</p>
+        that do not add up, repeated questions, and any word that is not in the British-English dictionary (names, which
+        begin with a capital, are left alone). It is not a substitute for reading the paper: it cannot tell you that an
+        answer is wrong or a question is unfair.</p>
     </div>
   </div>
 
@@ -329,6 +331,10 @@ function withBlanks(s){
   return esc(s).replace(/_{3,}/g, '<span class="blank"></span>');
 }
 
+/* an instruction is short; a reading passage typed on the same line as the
+   question number is prose, and prose is printed plain, not in bold */
+function isProse(text){ return wordCount(text || '') > 25; }
+
 function itemHtml(it, qpre){
   var m = markText(it), h = '';
   if(it.kind === 'blank') return '<div style="height:2.5mm"></div>';
@@ -359,11 +365,12 @@ function itemHtml(it, qpre){
     return h + (m ? '<span class="m" style="flex:0">' + m + '</span>' : '') + '</div>';
   }
   if(it.kind === 'q')
-    return '<div class="qline"><div class="n">' + qpre + it.num + '.</div><div class="t">' +
+    return '<div class="qline' + (isProse(it.text) ? ' reg' : '') + '"><div class="n">' +
+           qpre + it.num + '.</div><div class="t">' +
            withBlanks(it.text) + '</div><div class="m">' + m + '</div></div>';
   if(it.kind === 'part' || it.kind === 'sub')
     return '<div class="' + (it.kind === 'part' ? 'partline' : 'subline') +
-           (/_{3,}/.test(it.text) ? ' reg' : '') + '"><div class="n">' +
+           (/_{3,}/.test(it.text) || isProse(it.text) ? ' reg' : '') + '"><div class="n">' +
            esc(it.label) + '.</div><div class="t">' + withBlanks(it.text) +
            '</div><div class="m">' + m + '</div></div>';
   return '<div class="para">' + withBlanks(it.text) +
@@ -476,6 +483,46 @@ var TYPOS = dict({
   discuss_about:'discuss', cousin_brother:'cousin'
 });
 
+/* The British-English word list is loaded once, in the background, so that any
+   misspelling can be flagged and not only the handful in TYPOS. Words that begin
+   with a capital are left alone: they are names (Rohan, Nehru Park), which no
+   dictionary holds. If the list cannot be fetched (the page opened from a file,
+   say), the checker still runs on TYPOS and says so. */
+var DICT = null, DICT_STATE = 'loading';
+fetch('words-en.txt').then(function(r){ return r.ok ? r.text() : Promise.reject(); })
+  .then(function(txt){
+    DICT = Object.create(null);
+    txt.split('\n').forEach(function(w){ if(w) DICT[w] = 1; });
+    DICT_STATE = 'ready';
+    if(el('report').innerHTML) check();          /* re-run a report already shown */
+  })
+  .catch(function(){ DICT_STATE = 'failed'; });
+
+function known(low){
+  if(DICT[low]) return true;
+  /* a possessive or a hyphenated compound is known if its parts are */
+  var parts = low.split(/[-\u2019']/).filter(function(p){ return p; });
+  if(parts.length > 1) return parts.every(function(p){ return DICT[p] || p === 's'; });
+  return false;
+}
+
+/* the one nearest correct word, if a single letter explains the mistake */
+function nearest(low){
+  var abc = 'abcdefghijklmnopqrstuvwxyz', hits = [];
+  function tryWord(c){ if(DICT[c] && hits.indexOf(c) < 0) hits.push(c); }
+  for(var i = 0; i < low.length; i++){
+    tryWord(low.slice(0, i) + low.slice(i + 1));                               /* drop */
+    if(i) tryWord(low.slice(0, i - 1) + low[i] + low[i - 1] + low.slice(i + 1)); /* swap */
+    for(var j = 0; j < 26; j++){
+      tryWord(low.slice(0, i) + abc[j] + low.slice(i + 1));                    /* change */
+      tryWord(low.slice(0, i) + abc[j] + low.slice(i));                        /* insert */
+    }
+    if(hits.length > 3) break;
+  }
+  for(var k = 0; k < 26; k++) tryWord(low + abc[k]);
+  return hits.slice(0, 3);
+}
+
 /* only Latin words, because the dictionaries that use this list are English */
 function words(text){ return text.match(/[A-Za-z][A-Za-z'’-]*/g) || []; }
 /* how long a line is, in any script */
@@ -532,6 +579,8 @@ function check(){
     var spellQ = isSpellingLine(t);
     var ws = hindi() ? [] : words(t);   /* the dictionaries are English */
     ws.forEach(function(w){
+      w = w.replace(/^[-'’]+|[-'’]+$/g, '');   /* the quotes round a quoted word */
+      if(!w) return;
       var low = w.toLowerCase();
       if(TYPOS[low])
         add(spellQ ? 'warn' : 'err', it.line, 'Misspelling: "' + w + '" → "' + TYPOS[low] + '"' +
@@ -542,6 +591,17 @@ function check(){
       else if(el('british').checked && AMBIGUOUS[low])
         add('warn', it.line, '"' + w + '" is correct English and is left as typed — but if you mean the ' +
             'other sense, it is "' + AMBIGUOUS[low] + '"', false);
+      else if(DICT && !/^[A-Z]/.test(w) && w.length > 2 && !known(low)){
+        var near = nearest(low);
+        /* a wrong form is often put in the options on purpose ("tooths"), so
+           there it is mentioned rather than counted as a mistake */
+        var soft = spellQ || it.kind === 'opts';
+        add(soft ? 'warn' : 'err', it.line,
+            'Not an English word: "' + w + '"' +
+            (near.length ? ' — did you mean "' + near.join('", "') + '"?' : '') +
+            (spellQ ? ' — left alone, this line looks like a spelling question'
+                    : it.kind === 'opts' ? ' — in an option row, so left as typed' : ''), false);
+      }
     });
 
     /* MCQ options */
@@ -616,6 +676,11 @@ function check(){
   if(!qs.length) add('warn', null, 'No numbered questions found — start each question with "1." or "' + w('q') + '1."', false);
   if(!el('grade').value.trim())    add('warn', null, 'Grade is empty in the paper details', false);
   if(!el('subject').value.trim())  add('warn', null, 'Subject is empty in the paper details', false);
+  if(!hindi() && DICT_STATE === 'loading')
+    add('warn', null, 'The word list is still loading — press Check for errors again in a moment for the full spelling check', false);
+  if(!hindi() && DICT_STATE === 'failed')
+    add('warn', null, 'The word list could not be loaded, so only common misspellings were checked — ' +
+                      'open the paper maker from its web address rather than a saved copy', false);
   if(!el('max').value.trim())      add('warn', null, 'Maximum marks is empty in the paper details', false);
   if(!el('duration').value.trim()) add('warn', null, 'Duration is empty in the paper details', false);
 

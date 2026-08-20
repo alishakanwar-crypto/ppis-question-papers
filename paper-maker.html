@@ -68,7 +68,11 @@
   .u.s{min-width:14mm}
   .rule{border:0;border-top:1.4pt solid #000;margin:0 0 2.5mm}
   .sec{text-align:center;font-weight:bold;text-decoration:underline;margin:3.5mm 0 1.5mm}
-  .qline,.partline,.subline{display:flex;gap:2mm;font-weight:bold;page-break-inside:avoid}
+  /* a section heading is printed with the opening lines of its first question, so a
+     new section never starts with one or two stray lines at the foot of a page */
+  .secstart{page-break-inside:avoid;break-inside:avoid}
+  .qblk{page-break-inside:avoid;break-inside:avoid}
+  .qline,.partline,.subline{display:flex;gap:2mm;font-weight:bold;page-break-inside:avoid;break-inside:avoid}
   .qline{margin-top:2mm}
   .partline{margin:1.5mm 0 0 5mm}
   .subline{margin:1.5mm 0 0 8mm}
@@ -80,7 +84,7 @@
   .m{white-space:nowrap;text-align:right;font-weight:bold;padding-left:3mm}
   .opts{display:flex;margin:1mm 0 0 12mm;font-weight:normal}
   .opts span{flex:1;padding-right:3mm}
-  .para{margin:1mm 0 0 2mm;text-align:justify}
+  .para{margin:1mm 0 0 2mm;text-align:justify;orphans:2;widows:2}
   .box{margin:2mm 0 2mm 12mm;width:44mm;border-collapse:collapse}
   .box td{border:1px solid #000;padding:1mm;text-align:center}
   table.match{border-collapse:collapse;margin:2mm 0 2mm 16mm}
@@ -96,10 +100,11 @@
     .scale{overflow:visible}
     .sheet{width:auto;min-height:0;box-shadow:none;margin:0;padding:0}
     /* the frame is drawn at the page edge, so the text keeps clear of it */
-    .page{border:0;padding:3mm 6mm 0;min-height:0}
+    .page{border:0;padding:3mm 6mm;min-height:0;orphans:2;widows:2}
     /* fixed, so the border is drawn round every printed page and not just the first */
     .frame{display:block;position:fixed;top:0;left:0;right:0;bottom:0;border:1px solid #000}
-    @page{size:A4;margin:9mm 8mm}
+    .sec{page-break-after:avoid;break-after:avoid}
+    @page{size:A4 portrait;margin:7mm 6mm}
   }
 </style>
 </head>
@@ -324,6 +329,72 @@ function withBlanks(s){
   return esc(s).replace(/_{3,}/g, '<span class="blank"></span>');
 }
 
+function itemHtml(it, qpre){
+  var m = markText(it), h = '';
+  if(it.kind === 'blank') return '<div style="height:2.5mm"></div>';
+  if(it.kind === 'section') return '<div class="sec">' + esc(it.text) + '</div>';
+  if(it.kind === 'lines'){
+    for(var i = 0; i < it.n; i++) h += '<div class="ansline"></div>';
+    return h;
+  }
+  if(it.kind === 'box'){
+    h = '<table class="box">';
+    it.cells.forEach(function(c){ h += '<tr><td>' + esc(c) + '</td></tr>'; });
+    return h + '</table>';
+  }
+  if(it.kind === 'match'){
+    h = '<table class="match"><tr class="h"><td class="lbl"></td><td>' + esc(it.head[0] || '') +
+        '</td><td class="lbl"></td><td>' + esc(it.head[1] || '') + '</td></tr>';
+    var letters = hindi() ? ['क','ख','ग','घ','ङ','च','छ','ज'] : 'abcdefgh'.split('');
+    var romans = ['i','ii','iii','iv','v','vi','vii','viii'];
+    it.rows.forEach(function(r, i){
+      h += '<tr><td class="lbl">' + letters[i] + '.</td><td>' + esc(r[0] || '') +
+           '</td><td class="lbl">' + romans[i] + '.</td><td>' + esc(r[1] || '') + '</td></tr>';
+    });
+    return h + '</table>';
+  }
+  if(it.kind === 'opts'){
+    h = '<div class="opts">';
+    it.opts.forEach(function(o){ h += '<span>' + withBlanks(o) + '</span>'; });
+    return h + (m ? '<span class="m" style="flex:0">' + m + '</span>' : '') + '</div>';
+  }
+  if(it.kind === 'q')
+    return '<div class="qline"><div class="n">' + qpre + it.num + '.</div><div class="t">' +
+           withBlanks(it.text) + '</div><div class="m">' + m + '</div></div>';
+  if(it.kind === 'part' || it.kind === 'sub')
+    return '<div class="' + (it.kind === 'part' ? 'partline' : 'subline') +
+           (/_{3,}/.test(it.text) ? ' reg' : '') + '"><div class="n">' +
+           esc(it.label) + '.</div><div class="t">' + withBlanks(it.text) +
+           '</div><div class="m">' + m + '</div></div>';
+  return '<div class="para">' + withBlanks(it.text) +
+         (m ? '<span class="m" style="float:right">' + m + '</span>' : '') + '</div>';
+}
+
+/* A section heading is tied to the opening of its first question so the printer
+   never leaves a heading, or a heading and a line or two, alone at the foot of a
+   page: the whole opening moves to the next page instead. Only a few short lines
+   are tied together, so a section that is longer than a page still flows. */
+var KEEP_MAX = 4;                                  /* blocks kept with the heading */
+function groupForPrint(blocks){
+  var out = '', i = 0;
+  while(i < blocks.length){
+    if(blocks[i].kind !== 'section'){ out += blocks[i].html; i++; continue; }
+    var keep = blocks[i].html, j = i + 1, kept = 0, seenQ = false;
+    while(j < blocks.length && kept < KEEP_MAX){
+      var k = blocks[j].kind;
+      if(k === 'section') break;
+      if(k === 'q'){ if(seenQ) break; seenQ = true; }
+      if(k === 'lines' || k === 'match' || k === 'box') break;   /* tall: let it flow */
+      keep += blocks[j].html;
+      if(k !== 'blank') kept++;
+      j++;
+    }
+    out += '<div class="secstart">' + keep + '</div>';
+    i = j;
+  }
+  return out;
+}
+
 function render(){
   var items = parse(el('body').value);
   var ses = el('session').value.trim(), ttl = el('title').value.trim();
@@ -354,52 +425,7 @@ function render(){
   h += '<hr class="rule">';
 
   var qpre = w('q');
-  items.forEach(function(it){
-    var m = markText(it);
-    if(it.kind === 'blank'){ h += '<div style="height:2.5mm"></div>'; return; }
-    if(it.kind === 'section'){ h += '<div class="sec">' + esc(it.text) + '</div>'; return; }
-    if(it.kind === 'lines'){
-      for(var i = 0; i < it.n; i++) h += '<div class="ansline"></div>';
-      return;
-    }
-    if(it.kind === 'box'){
-      h += '<table class="box">';
-      it.cells.forEach(function(c){ h += '<tr><td>' + esc(c) + '</td></tr>'; });
-      h += '</table>';
-      return;
-    }
-    if(it.kind === 'match'){
-      h += '<table class="match"><tr class="h"><td class="lbl"></td><td>' + esc(it.head[0] || '') +
-           '</td><td class="lbl"></td><td>' + esc(it.head[1] || '') + '</td></tr>';
-      var letters = hindi() ? ['क','ख','ग','घ','ङ','च','छ','ज'] : 'abcdefgh'.split('');
-      var romans = ['i','ii','iii','iv','v','vi','vii','viii'];
-      it.rows.forEach(function(r, i){
-        h += '<tr><td class="lbl">' + letters[i] + '.</td><td>' + esc(r[0] || '') +
-             '</td><td class="lbl">' + romans[i] + '.</td><td>' + esc(r[1] || '') + '</td></tr>';
-      });
-      h += '</table>';
-      return;
-    }
-    if(it.kind === 'opts'){
-      h += '<div class="opts">';
-      it.opts.forEach(function(o){ h += '<span>' + withBlanks(o) + '</span>'; });
-      h += (m ? '<span class="m" style="flex:0">' + m + '</span>' : '') + '</div>';
-      return;
-    }
-    if(it.kind === 'q'){
-      h += '<div class="qline"><div class="n">' + qpre + it.num + '.</div><div class="t">' +
-           withBlanks(it.text) + '</div><div class="m">' + m + '</div></div>';
-      return;
-    }
-    if(it.kind === 'part' || it.kind === 'sub'){
-      h += '<div class="' + (it.kind === 'part' ? 'partline' : 'subline') +
-           (/_{3,}/.test(it.text) ? ' reg' : '') + '"><div class="n">' +
-           esc(it.label) + '.</div><div class="t">' + withBlanks(it.text) +
-           '</div><div class="m">' + m + '</div></div>';
-      return;
-    }
-    h += '<div class="para">' + withBlanks(it.text) + (m ? '<span class="m" style="float:right">' + m + '</span>' : '') + '</div>';
-  });
+  h += groupForPrint(items.map(function(it){ return { kind:it.kind, html:itemHtml(it, qpre) }; }));
 
   h += '</div>';
   el('sheet').className = 'sheet' + (hindi() ? ' hi' : '');

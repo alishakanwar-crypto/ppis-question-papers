@@ -54,9 +54,12 @@
   .scale{overflow:auto}
   .sheet{background:#fff;width:210mm;min-height:297mm;padding:9mm;margin:0 auto;
          box-shadow:0 1px 6px rgba(22,35,58,.14);color:#000}
+  /* the four settings the teacher can change are held as page variables, so the
+     preview and the print use exactly the same numbers */
+  .sheet{--pfont:Calibri,Carlito,"Segoe UI",Arial,sans-serif;--psize:11.5pt;--pline:1.34;--pind:5mm}
+  .sheet.hi{--pfont:"Nirmala UI","Noto Sans Devanagari",Mangal,Calibri,Arial,sans-serif;--psize:12.5pt}
   .page{border:1px solid #000;padding:6mm 5mm;min-height:279mm;
-        font-family:Calibri,Carlito,"Segoe UI",Arial,sans-serif;font-size:11.5pt;line-height:1.34}
-  .sheet.hi .page{font-family:"Nirmala UI","Noto Sans Devanagari",Mangal,Calibri,Arial,sans-serif;font-size:12.5pt}
+        font-family:var(--pfont);font-size:var(--psize);line-height:var(--pline)}
   .frame{display:none}
   .head{position:relative;text-align:center;min-height:19mm;padding-top:3mm}
   .head img{position:absolute;left:0;top:1mm;height:10mm}
@@ -68,22 +71,33 @@
   .u.s{min-width:14mm}
   .rule{border:0;border-top:1.4pt solid #000;margin:0 0 2.5mm}
   .sec{text-align:center;font-weight:bold;text-decoration:underline;margin:3.5mm 0 1.5mm}
-  .qline,.partline,.subline{display:flex;gap:2mm;font-weight:bold;page-break-inside:avoid}
+  /* a section heading is printed with the opening lines of its first question, so a
+     new section never starts with one or two stray lines at the foot of a page */
+  .secstart{page-break-inside:avoid;break-inside:avoid}
+  .qblk{page-break-inside:avoid;break-inside:avoid}
+  .qline,.partline,.subline{display:flex;gap:2mm;font-weight:bold;page-break-inside:avoid;break-inside:avoid}
   .qline{margin-top:2mm}
-  .partline{margin:1.5mm 0 0 5mm}
-  .subline{margin:1.5mm 0 0 8mm}
-  /* a sentence the child completes is printed plain, as on the school's own paper */
-  .partline.reg,.subline.reg{font-weight:normal}
-  .partline.reg .m,.subline.reg .m{font-weight:bold}
+  .partline{margin:1.5mm 0 0 var(--pind)}
+  .subline{margin:1.5mm 0 0 calc(var(--pind) * 1.6)}
+  /* a sentence the child completes, and a reading passage typed on the question
+     line, are printed plain, as on the school's own paper */
+  .qline.reg,.partline.reg,.subline.reg{font-weight:normal}
+  .qline.reg .n,.qline.reg .m,.partline.reg .m,.subline.reg .m{font-weight:bold}
+  /* "Print the question lines in bold" unticked: only the number and the marks stay bold */
+  .sheet.plain .qline,.sheet.plain .partline,.sheet.plain .subline{font-weight:normal}
+  .sheet.plain .qline .n,.sheet.plain .partline .n,.sheet.plain .subline .n,.sheet.plain .m{font-weight:bold}
+  /* what *these marks* in the typed text do */
+  .page b{font-weight:bold}
+  .page .unb{font-weight:normal}
   .qline .n,.partline .n,.subline .n{white-space:nowrap}
   .qline .t,.partline .t,.subline .t{flex:1}
   .m{white-space:nowrap;text-align:right;font-weight:bold;padding-left:3mm}
-  .opts{display:flex;margin:1mm 0 0 12mm;font-weight:normal}
+  .opts{display:flex;margin:1mm 0 0 calc(var(--pind) * 2.4);font-weight:normal}
   .opts span{flex:1;padding-right:3mm}
-  .para{margin:1mm 0 0 2mm;text-align:justify}
-  .box{margin:2mm 0 2mm 12mm;width:44mm;border-collapse:collapse}
+  .para{margin:1mm 0 0 2mm;text-align:justify;orphans:2;widows:2}
+  .box{margin:2mm 0 2mm calc(var(--pind) * 2.4);width:44mm;border-collapse:collapse}
   .box td{border:1px solid #000;padding:1mm;text-align:center}
-  table.match{border-collapse:collapse;margin:2mm 0 2mm 16mm}
+  table.match{border-collapse:collapse;margin:2mm 0 2mm calc(var(--pind) * 3.2)}
   table.match td{border:1px solid #000;padding:.5mm 5mm;text-align:center}
   table.match td.lbl{padding:.5mm 2mm}
   table.match tr.h td{font-weight:bold}
@@ -96,10 +110,11 @@
     .scale{overflow:visible}
     .sheet{width:auto;min-height:0;box-shadow:none;margin:0;padding:0}
     /* the frame is drawn at the page edge, so the text keeps clear of it */
-    .page{border:0;padding:3mm 6mm 0;min-height:0}
+    .page{border:0;padding:3mm 6mm;min-height:0;orphans:2;widows:2}
     /* fixed, so the border is drawn round every printed page and not just the first */
     .frame{display:block;position:fixed;top:0;left:0;right:0;bottom:0;border:1px solid #000}
-    @page{size:A4;margin:9mm 8mm}
+    .sec{page-break-after:avoid;break-after:avoid}
+    @page{size:A4 portrait;margin:7mm 6mm}
   }
 </style>
 </head>
@@ -141,6 +156,8 @@ Write the answers in the space provided.</textarea></div>
         <code>BOX: baskets | shopkeeper | money</code> a help box ·
         <code>MATCH: MASCULINE | FEMININE</code> then <code>uncle | niece</code> on each following line ·
         <code>LINES: 4</code> four ruled answer lines · <code>____</code> a blank to fill · a blank line leaves a gap.</p>
+      <p class="hint">To change the weight of a few words only: <code>*bold*</code> prints in bold,
+        <code>~plain~</code> prints without bold on a line that is otherwise bold.</p>
       <div class="bar">
         <button class="btn btn-ghost" id="sample">Load a sample paper</button>
         <button class="btn btn-ghost" id="clear">Clear</button>
@@ -149,7 +166,47 @@ Write the answers in the space provided.</textarea></div>
     </div>
 
     <div class="card">
-      <h2>3 &nbsp;Check &amp; print</h2>
+      <h2>3 &nbsp;Formatting</h2>
+      <div class="row">
+        <div class="f"><label>Font</label>
+          <select id="font">
+            <option value="">Calibri (the school's own papers)</option>
+            <option value="Arial,Helvetica,sans-serif">Arial</option>
+            <option value="&quot;Times New Roman&quot;,Times,serif">Times New Roman</option>
+            <option value="Cambria,Georgia,serif">Cambria</option>
+            <option value="Georgia,serif">Georgia</option>
+            <option value="Verdana,Geneva,sans-serif">Verdana</option>
+            <option value="&quot;Comic Sans MS&quot;,&quot;Comic Neue&quot;,cursive">Comic Sans MS (the little ones)</option>
+            <option value="&quot;Nirmala UI&quot;,&quot;Noto Sans Devanagari&quot;,Mangal,Arial,sans-serif">Nirmala UI (Hindi)</option>
+            <option value="&quot;Noto Serif Devanagari&quot;,&quot;Kokila&quot;,Mangal,serif">Noto Serif Devanagari (Hindi)</option>
+          </select></div>
+        <div class="f"><label>Font size</label>
+          <select id="fsize">
+            <option value="">Default (11.5pt, Hindi 12.5pt)</option>
+            <option value="10pt">10 pt</option><option value="10.5pt">10.5 pt</option>
+            <option value="11pt">11 pt</option><option value="11.5pt">11.5 pt</option>
+            <option value="12pt">12 pt</option><option value="12.5pt">12.5 pt</option>
+            <option value="13pt">13 pt</option><option value="14pt">14 pt</option>
+            <option value="16pt">16 pt</option>
+          </select></div>
+      </div>
+      <div class="row">
+        <div class="f"><label>Line spacing</label>
+          <select id="fline">
+            <option value="1.34">Normal</option><option value="1.15">Tight</option>
+            <option value="1.5">Roomy (1.5)</option><option value="1.8">Double-ish</option>
+          </select></div>
+        <div class="f"><label>Indent of parts and sub-parts</label>
+          <select id="find">
+            <option value="5mm">Normal (5 mm)</option><option value="0mm">None</option>
+            <option value="2.5mm">Small (2.5 mm)</option><option value="8mm">Wide (8 mm)</option>
+            <option value="12mm">Very wide (12 mm)</option>
+          </select></div>
+      </div>
+      <div class="chk"><input type="checkbox" id="boldq" checked>
+        <label for="boldq" style="margin:0">Print the question lines in bold (the number and the marks stay bold either way)</label></div>
+
+      <h2 style="margin-top:20px">4 &nbsp;Check &amp; print</h2>
       <div class="bar" style="margin-top:0">
         <button class="btn" id="check">Check for errors</button>
         <button class="btn btn-ghost" id="fix">Fix the mechanical ones</button>
@@ -161,12 +218,13 @@ Write the answers in the space provided.</textarea></div>
       <p class="hint"><b>Save as PDF:</b> the print window opens — choose <i>Destination: Save as PDF</i>, paper size A4,
         and switch <i>Headers and footers</i> off. To print copies for the class, choose the printer instead.</p>
       <p class="hint">The checker catches mechanical and structural mistakes — spacing, punctuation, numbering, marks
-        that do not add up, repeated questions, common misspellings. It is not a substitute for reading the paper: it
-        cannot tell you that an answer is wrong or a question is unfair.</p>
+        that do not add up, repeated questions, and any word that is not in the British-English dictionary (names, which
+        begin with a capital, are left alone). It is not a substitute for reading the paper: it cannot tell you that an
+        answer is wrong or a question is unfair.</p>
     </div>
   </div>
 
-  <h2 style="margin:22px 0 10px">4 &nbsp;Preview</h2>
+  <h2 style="margin:22px 0 10px">5 &nbsp;Preview</h2>
 </div>
 
 <div class="scale"><div class="sheet" id="sheet"></div></div>
@@ -174,8 +232,9 @@ Write the answers in the space provided.</textarea></div>
 <script>
 /* ------------------------------------------------------------------ storage */
 var KEY = 'ppis-paper-maker-v2';
-var FIELDS = ['lang','session','title','grade','subject','duration','max','instr','body'];
-var CHECKS = ['showNames','british'];
+var FIELDS = ['lang','session','title','grade','subject','duration','max','instr','body',
+              'font','fsize','fline','find'];
+var CHECKS = ['showNames','british','boldq'];
 
 /* every fixed word the printed paper uses, in both languages */
 var WORDS = {
@@ -319,9 +378,86 @@ function markText(it){
   if(it.shown) return esc(it.shown);
   return it.marks === null ? '' : '(' + it.marks + ')';
 }
-/* runs of underscores are the blanks a child writes on */
+/* runs of underscores are the blanks a child writes on; *stars* bold a few words
+   and ~tildes~ take the bold off them, for the odd line the teacher wants set
+   differently from the rest */
 function withBlanks(s){
-  return esc(s).replace(/_{3,}/g, '<span class="blank"></span>');
+  return esc(s).replace(/_{3,}/g, '<span class="blank"></span>')
+               .replace(/\*([^*\n]+)\*/g, '<b>$1</b>')
+               .replace(/~([^~\n]+)~/g, '<span class="unb">$1</span>');
+}
+/* the checker reads the words, not the marks round them */
+function stripMarks(s){ return String(s == null ? '' : s).replace(/[*~]/g, ''); }
+
+/* an instruction is short; a reading passage typed on the same line as the
+   question number is prose, and prose is printed plain, not in bold */
+function isProse(text){ return wordCount(text || '') > 25; }
+
+function itemHtml(it, qpre){
+  var m = markText(it), h = '';
+  if(it.kind === 'blank') return '<div style="height:2.5mm"></div>';
+  if(it.kind === 'section') return '<div class="sec">' + esc(it.text) + '</div>';
+  if(it.kind === 'lines'){
+    for(var i = 0; i < it.n; i++) h += '<div class="ansline"></div>';
+    return h;
+  }
+  if(it.kind === 'box'){
+    h = '<table class="box">';
+    it.cells.forEach(function(c){ h += '<tr><td>' + esc(c) + '</td></tr>'; });
+    return h + '</table>';
+  }
+  if(it.kind === 'match'){
+    h = '<table class="match"><tr class="h"><td class="lbl"></td><td>' + esc(it.head[0] || '') +
+        '</td><td class="lbl"></td><td>' + esc(it.head[1] || '') + '</td></tr>';
+    var letters = hindi() ? ['क','ख','ग','घ','ङ','च','छ','ज'] : 'abcdefgh'.split('');
+    var romans = ['i','ii','iii','iv','v','vi','vii','viii'];
+    it.rows.forEach(function(r, i){
+      h += '<tr><td class="lbl">' + letters[i] + '.</td><td>' + esc(r[0] || '') +
+           '</td><td class="lbl">' + romans[i] + '.</td><td>' + esc(r[1] || '') + '</td></tr>';
+    });
+    return h + '</table>';
+  }
+  if(it.kind === 'opts'){
+    h = '<div class="opts">';
+    it.opts.forEach(function(o){ h += '<span>' + withBlanks(o) + '</span>'; });
+    return h + (m ? '<span class="m" style="flex:0">' + m + '</span>' : '') + '</div>';
+  }
+  if(it.kind === 'q')
+    return '<div class="qline' + (isProse(it.text) ? ' reg' : '') + '"><div class="n">' +
+           qpre + it.num + '.</div><div class="t">' +
+           withBlanks(it.text) + '</div><div class="m">' + m + '</div></div>';
+  if(it.kind === 'part' || it.kind === 'sub')
+    return '<div class="' + (it.kind === 'part' ? 'partline' : 'subline') +
+           (/_{3,}/.test(it.text) || isProse(it.text) ? ' reg' : '') + '"><div class="n">' +
+           esc(it.label) + '.</div><div class="t">' + withBlanks(it.text) +
+           '</div><div class="m">' + m + '</div></div>';
+  return '<div class="para">' + withBlanks(it.text) +
+         (m ? '<span class="m" style="float:right">' + m + '</span>' : '') + '</div>';
+}
+
+/* A section heading is tied to the opening of its first question so the printer
+   never leaves a heading, or a heading and a line or two, alone at the foot of a
+   page: the whole opening moves to the next page instead. Only a few short lines
+   are tied together, so a section that is longer than a page still flows. */
+var KEEP_MAX = 4;                                  /* blocks kept with the heading */
+function groupForPrint(blocks){
+  var out = '', i = 0;
+  while(i < blocks.length){
+    if(blocks[i].kind !== 'section'){ out += blocks[i].html; i++; continue; }
+    var keep = blocks[i].html, j = i + 1, kept = 0, seenQ = false;
+    while(j < blocks.length && kept < KEEP_MAX){
+      var k = blocks[j].kind;
+      if(k === 'section') break;
+      if(k === 'q'){ if(seenQ) break; seenQ = true; }
+      if(k === 'lines' || k === 'match' || k === 'box') break;   /* tall: let it flow */
+      keep += blocks[j].html;
+      if(k !== 'blank') kept++;
+      j++;
+    }
+    out += '<div class="secstart">' + keep + '</div>';
+    i = j;
+  }
+  return out;
 }
 
 function render(){
@@ -354,56 +490,16 @@ function render(){
   h += '<hr class="rule">';
 
   var qpre = w('q');
-  items.forEach(function(it){
-    var m = markText(it);
-    if(it.kind === 'blank'){ h += '<div style="height:2.5mm"></div>'; return; }
-    if(it.kind === 'section'){ h += '<div class="sec">' + esc(it.text) + '</div>'; return; }
-    if(it.kind === 'lines'){
-      for(var i = 0; i < it.n; i++) h += '<div class="ansline"></div>';
-      return;
-    }
-    if(it.kind === 'box'){
-      h += '<table class="box">';
-      it.cells.forEach(function(c){ h += '<tr><td>' + esc(c) + '</td></tr>'; });
-      h += '</table>';
-      return;
-    }
-    if(it.kind === 'match'){
-      h += '<table class="match"><tr class="h"><td class="lbl"></td><td>' + esc(it.head[0] || '') +
-           '</td><td class="lbl"></td><td>' + esc(it.head[1] || '') + '</td></tr>';
-      var letters = hindi() ? ['क','ख','ग','घ','ङ','च','छ','ज'] : 'abcdefgh'.split('');
-      var romans = ['i','ii','iii','iv','v','vi','vii','viii'];
-      it.rows.forEach(function(r, i){
-        h += '<tr><td class="lbl">' + letters[i] + '.</td><td>' + esc(r[0] || '') +
-             '</td><td class="lbl">' + romans[i] + '.</td><td>' + esc(r[1] || '') + '</td></tr>';
-      });
-      h += '</table>';
-      return;
-    }
-    if(it.kind === 'opts'){
-      h += '<div class="opts">';
-      it.opts.forEach(function(o){ h += '<span>' + withBlanks(o) + '</span>'; });
-      h += (m ? '<span class="m" style="flex:0">' + m + '</span>' : '') + '</div>';
-      return;
-    }
-    if(it.kind === 'q'){
-      h += '<div class="qline"><div class="n">' + qpre + it.num + '.</div><div class="t">' +
-           withBlanks(it.text) + '</div><div class="m">' + m + '</div></div>';
-      return;
-    }
-    if(it.kind === 'part' || it.kind === 'sub'){
-      h += '<div class="' + (it.kind === 'part' ? 'partline' : 'subline') +
-           (/_{3,}/.test(it.text) ? ' reg' : '') + '"><div class="n">' +
-           esc(it.label) + '.</div><div class="t">' + withBlanks(it.text) +
-           '</div><div class="m">' + m + '</div></div>';
-      return;
-    }
-    h += '<div class="para">' + withBlanks(it.text) + (m ? '<span class="m" style="float:right">' + m + '</span>' : '') + '</div>';
-  });
+  h += groupForPrint(items.map(function(it){ return { kind:it.kind, html:itemHtml(it, qpre) }; }));
 
   h += '</div>';
-  el('sheet').className = 'sheet' + (hindi() ? ' hi' : '');
+  el('sheet').className = 'sheet' + (hindi() ? ' hi' : '') + (el('boldq').checked ? '' : ' plain');
   el('sheet').innerHTML = h;
+  var st = el('sheet').style, set = [['--pfont','font'],['--psize','fsize'],['--pline','fline'],['--pind','find']];
+  set.forEach(function(p){
+    var v = el(p[1]).value;
+    if(v) st.setProperty(p[0], v); else st.removeProperty(p[0]);
+  });
 
   var qs = items.filter(function(i){ return i.kind === 'q'; });
   var total = effectiveMarks(items).reduce(function(a,m){ return a + m; }, 0);
@@ -450,6 +546,46 @@ var TYPOS = dict({
   discuss_about:'discuss', cousin_brother:'cousin'
 });
 
+/* The British-English word list is loaded once, in the background, so that any
+   misspelling can be flagged and not only the handful in TYPOS. Words that begin
+   with a capital are left alone: they are names (Rohan, Nehru Park), which no
+   dictionary holds. If the list cannot be fetched (the page opened from a file,
+   say), the checker still runs on TYPOS and says so. */
+var DICT = null, DICT_STATE = 'loading';
+fetch('words-en.txt').then(function(r){ return r.ok ? r.text() : Promise.reject(); })
+  .then(function(txt){
+    DICT = Object.create(null);
+    txt.split('\n').forEach(function(w){ if(w) DICT[w] = 1; });
+    DICT_STATE = 'ready';
+    if(el('report').innerHTML) check();          /* re-run a report already shown */
+  })
+  .catch(function(){ DICT_STATE = 'failed'; });
+
+function known(low){
+  if(DICT[low]) return true;
+  /* a possessive or a hyphenated compound is known if its parts are */
+  var parts = low.split(/[-\u2019']/).filter(function(p){ return p; });
+  if(parts.length > 1) return parts.every(function(p){ return DICT[p] || p === 's'; });
+  return false;
+}
+
+/* the one nearest correct word, if a single letter explains the mistake */
+function nearest(low){
+  var abc = 'abcdefghijklmnopqrstuvwxyz', hits = [];
+  function tryWord(c){ if(DICT[c] && hits.indexOf(c) < 0) hits.push(c); }
+  for(var i = 0; i < low.length; i++){
+    tryWord(low.slice(0, i) + low.slice(i + 1));                               /* drop */
+    if(i) tryWord(low.slice(0, i - 1) + low[i] + low[i - 1] + low.slice(i + 1)); /* swap */
+    for(var j = 0; j < 26; j++){
+      tryWord(low.slice(0, i) + abc[j] + low.slice(i + 1));                    /* change */
+      tryWord(low.slice(0, i) + abc[j] + low.slice(i));                        /* insert */
+    }
+    if(hits.length > 3) break;
+  }
+  for(var k = 0; k < 26; k++) tryWord(low + abc[k]);
+  return hits.slice(0, 3);
+}
+
 /* only Latin words, because the dictionaries that use this list are English */
 function words(text){ return text.match(/[A-Za-z][A-Za-z'’-]*/g) || []; }
 /* how long a line is, in any script */
@@ -475,7 +611,7 @@ function check(){
   /* --- line-level mechanical checks --- */
   items.forEach(function(it, idx){
     if(it.kind === 'blank') return;
-    var t = it.raw;
+    var t = stripMarks(it.raw);
     var answerFollows = ['opts','box','match','lines'].indexOf(nextKind(items, idx)) > -1;
 
     if(BEFORE_PUNCT.test(t))           add('err', it.line, 'Space before punctuation — "' + snip(t, BEFORE_PUNCT) + '"', true);
@@ -487,7 +623,7 @@ function check(){
     if(/\s+$/.test(it.raw))            add('warn', it.line, 'Trailing space at the end of the line', true);
 
     if(it.kind === 'q' || it.kind === 'sub' || it.kind === 'part'){
-      var body = it.text;
+      var body = stripMarks(it.text);
       if(body && !hindi() && /^[a-z]/.test(body) && !isWordItem(body))
                                         add('err', it.line, 'Question starts with a small letter — "' + body.slice(0,28) + '…"', true);
       var exercise = /punctuat|capital letter/i.test(body) || (/\(a\)/i.test(body) && /\(b\)/i.test(body));
@@ -506,6 +642,8 @@ function check(){
     var spellQ = isSpellingLine(t);
     var ws = hindi() ? [] : words(t);   /* the dictionaries are English */
     ws.forEach(function(w){
+      w = w.replace(/^[-'’]+|[-'’]+$/g, '');   /* the quotes round a quoted word */
+      if(!w) return;
       var low = w.toLowerCase();
       if(TYPOS[low])
         add(spellQ ? 'warn' : 'err', it.line, 'Misspelling: "' + w + '" → "' + TYPOS[low] + '"' +
@@ -516,6 +654,17 @@ function check(){
       else if(el('british').checked && AMBIGUOUS[low])
         add('warn', it.line, '"' + w + '" is correct English and is left as typed — but if you mean the ' +
             'other sense, it is "' + AMBIGUOUS[low] + '"', false);
+      else if(DICT && !/^[A-Z]/.test(w) && w.length > 2 && !known(low)){
+        var near = nearest(low);
+        /* a wrong form is often put in the options on purpose ("tooths"), so
+           there it is mentioned rather than counted as a mistake */
+        var soft = spellQ || it.kind === 'opts';
+        add(soft ? 'warn' : 'err', it.line,
+            'Not an English word: "' + w + '"' +
+            (near.length ? ' — did you mean "' + near.join('", "') + '"?' : '') +
+            (spellQ ? ' — left alone, this line looks like a spelling question'
+                    : it.kind === 'opts' ? ' — in an option row, so left as typed' : ''), false);
+      }
     });
 
     /* MCQ options */
@@ -590,6 +739,11 @@ function check(){
   if(!qs.length) add('warn', null, 'No numbered questions found — start each question with "1." or "' + w('q') + '1."', false);
   if(!el('grade').value.trim())    add('warn', null, 'Grade is empty in the paper details', false);
   if(!el('subject').value.trim())  add('warn', null, 'Subject is empty in the paper details', false);
+  if(!hindi() && DICT_STATE === 'loading')
+    add('warn', null, 'The word list is still loading — press Check for errors again in a moment for the full spelling check', false);
+  if(!hindi() && DICT_STATE === 'failed')
+    add('warn', null, 'The word list could not be loaded, so only common misspellings were checked — ' +
+                      'open the paper maker from its web address rather than a saved copy', false);
   if(!el('max').value.trim())      add('warn', null, 'Maximum marks is empty in the paper details', false);
   if(!el('duration').value.trim()) add('warn', null, 'Duration is empty in the paper details', false);
 

@@ -985,7 +985,7 @@ function sampleForLanguage(){ return hindi() ? SAMPLE_HI : SAMPLE; }
 /* the English spelling dictionaries mean nothing in a Hindi paper */
 function languageChanged(){
   el('britishRow').style.display = hindi() ? 'none' : 'flex';
-  save(); render();
+  save(); render(); refreshPdfName();
 }
 FIELDS.forEach(function(f){ el(f).addEventListener('input', function(){ save(); render(); }); });
 CHECKS.forEach(function(f){ el(f).addEventListener('change', function(){ save(); render(); }); });
@@ -997,11 +997,13 @@ el('print').addEventListener('click', function(){ window.print(); });
 /* Chrome, Edge and Firefox name a saved PDF after the page title, so the paper is
    named after itself on the teacher's computer instead of "index.html" */
 function pdfFileName(){
-  var parts = [];
-  if(el('grade').value.trim())   parts.push('Class-' + el('grade').value.trim());
-  if(el('subject').value.trim()) parts.push(el('subject').value.trim());
-  if(el('title').value.trim())   parts.push(el('title').value.trim());
-  var name = parts.join(' ').replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '-');
+  /* a part that is only characters a file name cannot hold is dropped, not left
+     behind as a dangling hyphen; the whole name is kept short enough to save */
+  function clean(v){ return String(v).replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim(); }
+  var grade = clean(el('grade').value), parts = [];
+  if(grade) parts.push('Class ' + grade);
+  [clean(el('subject').value), clean(el('title').value)].forEach(function(p){ if(p) parts.push(p); });
+  var name = parts.join(' ').replace(/\s+/g, '-').slice(0, 120).replace(/-+$/, '');
   return name || 'Question-paper';
 }
 function refreshPdfName(){ el('pdfname').textContent = pdfFileName() + '.pdf'; }
@@ -1025,7 +1027,7 @@ el('sample').addEventListener('click', function(){
   el('title').value = hindi() ? 'अभ्यास कार्यपत्रक-2' : 'APPRAISAL WORKSHEET-2';
   el('duration').value = hindi() ? '40 मिनट' : '40 Minutes';
   el('max').value = '20';
-  save(); render(); check();
+  save(); render(); check(); refreshPdfName();
 });
 el('clear').addEventListener('click', function(){
   if(!confirm('Clear the questions? The paper details stay as they are.')) return;

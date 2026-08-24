@@ -121,8 +121,8 @@
 <body>
 <div class="wrap noprint">
   <div class="top"><img src="ppis-logo.png" alt="PP International School"><h1>Question Paper Maker</h1></div>
-  <p class="sub">Type or paste the paper, press <b>Check for errors</b>, then <b>Save as PDF</b>. Everything stays on this
-     computer — nothing is uploaded.</p>
+  <p class="sub">Type or paste the paper, press <b>Check for errors</b>, then <b>Save the PDF on this computer</b>.
+     Everything stays on this computer — nothing is uploaded.</p>
 
   <div class="cols">
     <div class="card">
@@ -210,13 +210,17 @@ Write the answers in the space provided.</textarea></div>
       <div class="bar" style="margin-top:0">
         <button class="btn" id="check">Check for errors</button>
         <button class="btn btn-ghost" id="fix">Fix the mechanical ones</button>
-        <button class="btn btn-red" id="print">Save as PDF</button>
+        <button class="btn btn-red" id="savepdf">Save the PDF on this computer</button>
+        <button class="btn btn-ghost" id="print">Print copies</button>
       </div>
       <div class="chk" style="margin-top:12px" id="britishRow"><input type="checkbox" id="british" checked>
         <label for="british" style="margin:0">Flag American spellings (colour, practise, organise …)</label></div>
       <div id="report"></div>
-      <p class="hint"><b>Save as PDF:</b> the print window opens — choose <i>Destination: Save as PDF</i>, paper size A4,
-        and switch <i>Headers and footers</i> off. To print copies for the class, choose the printer instead.</p>
+      <p class="hint"><b>Save the PDF on this computer:</b> the window opens — set <i>Destination</i> to
+        <b>Save as PDF</b>, press <b>Save</b> and choose the folder. The file arrives named after the paper itself,
+        <code id="pdfname">Class-II-English-Appraisal-Worksheet-2.pdf</code>, not "index.html", so it is easy to find
+        again. Keep the paper size at <b>A4</b> and <i>Headers and footers</i> off.<br>
+        <b>Print copies</b> sends the same paper to the printer instead.</p>
       <p class="hint">The checker catches mechanical and structural mistakes — spacing, punctuation, numbering, marks
         that do not add up, repeated questions, and any word that is not in the British-English dictionary (names, which
         begin with a capital, are left alone). It is not a substitute for reading the paper: it cannot tell you that an
@@ -989,6 +993,25 @@ el('lang').addEventListener('change', languageChanged);
 el('check').addEventListener('click', check);
 el('fix').addEventListener('click', autofix);
 el('print').addEventListener('click', function(){ window.print(); });
+
+/* Chrome, Edge and Firefox name a saved PDF after the page title, so the paper is
+   named after itself on the teacher's computer instead of "index.html" */
+function pdfFileName(){
+  var parts = [];
+  if(el('grade').value.trim())   parts.push('Class-' + el('grade').value.trim());
+  if(el('subject').value.trim()) parts.push(el('subject').value.trim());
+  if(el('title').value.trim())   parts.push(el('title').value.trim());
+  var name = parts.join(' ').replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '-');
+  return name || 'Question-paper';
+}
+function refreshPdfName(){ el('pdfname').textContent = pdfFileName() + '.pdf'; }
+el('savepdf').addEventListener('click', function(){
+  var was = document.title;
+  document.title = pdfFileName();
+  window.print();
+  setTimeout(function(){ document.title = was; }, 1000);
+});
+['grade','subject','title'].forEach(function(f){ el(f).addEventListener('input', refreshPdfName); });
 el('sample').addEventListener('click', function(){
   el('body').value = sampleForLanguage();
   if(hindi()){
@@ -1011,6 +1034,7 @@ el('clear').addEventListener('click', function(){
 
 if(!load()) el('body').value = SAMPLE;   /* a cleared paper stays cleared */
 languageChanged();
+refreshPdfName();
 </script>
 </body>
 </html>

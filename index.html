@@ -996,6 +996,19 @@ el('print').addEventListener('click', function(){ window.print(); });
 
 /* Chrome, Edge and Firefox name a saved PDF after the page title, so the paper is
    named after itself on the teacher's computer instead of "index.html" */
+/* a file name is measured in bytes, not letters: a Devanagari letter takes three,
+   so cut on the encoded length and never in the middle of a letter */
+function clip(s, maxBytes){
+  var out = '', bytes = 0;
+  for(var i = 0; i < s.length; i++){
+    var ch = s[i];
+    if(/[\uD800-\uDBFF]/.test(ch) && i + 1 < s.length){ ch += s[++i]; }
+    var n = encodeURIComponent(ch).replace(/%[0-9A-F]{2}/gi, '.').length;
+    if(bytes + n > maxBytes) break;
+    out += ch; bytes += n;
+  }
+  return out;
+}
 function pdfFileName(){
   /* a part that is only characters a file name cannot hold is dropped, not left
      behind as a dangling hyphen; the whole name is kept short enough to save */
@@ -1003,7 +1016,7 @@ function pdfFileName(){
   var grade = clean(el('grade').value), parts = [];
   if(grade) parts.push('Class ' + grade);
   [clean(el('subject').value), clean(el('title').value)].forEach(function(p){ if(p) parts.push(p); });
-  var name = parts.join(' ').replace(/\s+/g, '-').slice(0, 120).replace(/-+$/, '');
+  var name = clip(parts.join(' ').replace(/\s+/g, '-'), 150).replace(/-+$/, '');
   return name || 'Question-paper';
 }
 function refreshPdfName(){ el('pdfname').textContent = pdfFileName() + '.pdf'; }

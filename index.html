@@ -70,7 +70,12 @@
   .u{display:inline-block;border-bottom:1px solid #000;min-width:36mm}
   .u.s{min-width:14mm}
   .rule{border:0;border-top:1.4pt solid #000;margin:0 0 2.5mm}
-  .sec{text-align:center;font-weight:bold;text-decoration:underline;margin:3.5mm 0 1.5mm}
+  /* a section heading stands in the middle of its own line, underlined, with the
+     marks the section carries at the right, as on the school's own papers */
+  .sec{display:flex;align-items:baseline;font-weight:bold;margin:3.5mm 0 1.5mm}
+  .sec .st{flex:1;text-align:center;text-decoration:underline}
+  .sec .sm{flex:0 0 26mm;text-align:right}
+  .sec .sp{flex:0 0 26mm}
   /* a section heading is printed with the opening lines of its first question, so a
      new section never starts with one or two stray lines at the foot of a page */
   .secstart{page-break-inside:avoid;break-inside:avoid}
@@ -103,9 +108,12 @@
   .para{margin:1mm 0 0 2mm;text-align:justify;orphans:2;widows:2}
   .box{margin:2mm 0 2mm calc(var(--pind) * 2.4);width:44mm;border-collapse:collapse}
   .box td{border:1px solid #000;padding:1mm;text-align:center}
-  table.match{border-collapse:collapse;margin:2mm 0 2mm calc(var(--pind) * 3.2)}
-  table.match td{border:1px solid #000;padding:.5mm 5mm;text-align:center}
-  table.match td.lbl{padding:.5mm 2mm}
+  /* the matching table is ruled across the whole width of the paper, flush with the
+     text, with room to write in the answer column */
+  table.match{border-collapse:collapse;width:100%;margin:2mm 0;table-layout:fixed}
+  table.match td{border:1px solid #000;padding:1.2mm 2mm;text-align:left;vertical-align:top}
+  table.match td.lbl{width:8mm;padding:1.2mm 1mm;text-align:center}
+  table.match td.ans{width:20mm;text-align:center}
   table.match tr.h td{font-weight:bold}
   .ansline{border-bottom:1px solid #000;height:9.5mm;margin:0 2mm}
   .blank{display:inline-block;border-bottom:1px solid #000;min-width:30mm}
@@ -171,7 +179,8 @@ Write the answers in the space provided.</textarea></div>
       <h2 style="margin-top:20px">2 &nbsp;Questions</h2>
       <textarea id="body" spellcheck="true"></textarea>
       <p class="hint">How to type it — exactly as the paper reads:<br>
-        <code>SECTION - A (READING)</code> a section heading · <code>Q1.</code> a question ·
+        <code>SECTION - A (READING)</code> a section heading — write <code>SECTION A 6 marks</code>
+        and the marks are printed at the right of the heading · <code>Q1.</code> a question ·
         <code>A.</code> a lettered part · <code>a.</code> a sub-part ·
         <code>i. one&nbsp;&nbsp;ii. two&nbsp;&nbsp;iii. three</code> options on one line ·
         marks at the end of the line: <code>(1)</code>, <code>(3x1=3)</code>, <code>(4x0.5=2)</code> or <code>[2]</code><br>
@@ -269,9 +278,11 @@ var CHECKS = ['showNames','british','boldq'];
 /* every fixed word the printed paper uses, in both languages */
 var WORDS = {
   en:{ session:'ACADEMIC SESSION', grade:'GRADE', subject:'SUBJECT', duration:'Duration',
-       max:'Maximum Marks', instr:'General Instructions', name:'Name', section:'Section', q:'Q' },
+       max:'Maximum Marks', instr:'General Instructions', name:'Name', section:'Section', q:'Q',
+       answer:'Answer', marks:'Marks' },
   hi:{ session:'शैक्षणिक सत्र', grade:'कक्षा', subject:'विषय', duration:'समय',
-       max:'अधिकतम अंक', instr:'सामान्य निर्देश', name:'नाम', section:'वर्ग', q:'प्र' }
+       max:'अधिकतम अंक', instr:'सामान्य निर्देश', name:'नाम', section:'वर्ग', q:'प्र',
+       answer:'उत्तर', marks:'अंक' }
 };
 function hindi(){ return el('lang').value === 'hi'; }
 function w(k){ return WORDS[hindi() ? 'hi' : 'en'][k]; }
@@ -308,6 +319,8 @@ var BOX_RE   = /^\s*BOX\s*:\s*(.+)$/i;
 var MATCH_RE = /^\s*MATCH\s*:\s*(.+)$/i;
 var LINES_RE = /^\s*LINES\s*:?\s*(\d+)\s*$/i;
 var PIC_RE   = /^\s*(?:PIC|PICTURE)\s*:?\s*(\d+)?\s*$/i;
+/* "SECTION A 6 marks" written without brackets */
+var SEC_MARKS_RE = /[\s\-\u2013:|]+(\d+(?:\.\d+)?)\s*(?:marks?|\u0905\u0902\u0915)\s*$/i;
 /* (1) · (3x1=3) · (4x0.5=2) · [2] · (2 marks) */
 var MARK_RE  = /[\[(]\s*(\d+(?:\.\d+)?(?:\s*[x\u00d7*]\s*\d+(?:\.\d+)?)?(?:\s*=\s*\d+(?:\.\d+)?)?)\s*(?:marks?|m|\u0905\u0902\u0915)?\s*[\])]\s*$/i;
 
@@ -377,7 +390,12 @@ function parse(src){
                  text:t, marks:null, line:i+1, raw:raw });
       continue;
     }
-    if(SEC_RE.test(t)){ out.push({ kind:'section', text:t, marks:null, line:i+1, raw:raw }); continue; }
+    if(SEC_RE.test(t)){
+      /* "SECTION A (6)" and "SECTION A 6 marks" both carry the section's marks */
+      var st = splitMarks(t.replace(SEC_MARKS_RE, ' ($1)'));
+      out.push({ kind:'section', text:st.text, marks:st.marks, line:i+1, raw:raw });
+      continue;
+    }
 
     if(isOptionRow(t)){
       var so = splitMarks(t);
@@ -449,6 +467,13 @@ function picHtml(idx){
 /* the checker reads the words, not the marks round them */
 function stripMarks(s){ return String(s == null ? '' : s).replace(/[*~]/g, ''); }
 
+/* the marks a whole section carries, printed at the right of its heading: the
+   teacher writes them as "SECTION A (6)" or "SECTION A 6 marks" */
+function sectionMarks(it){
+  if(it.marks === null) return '';
+  return it.marks + ' ' + w('marks');
+}
+
 /* an instruction is short; a reading passage typed on the same line as the
    question number is prose, and prose is printed plain, not in bold */
 function isProse(text){ return wordCount(text || '') > 25; }
@@ -456,7 +481,9 @@ function isProse(text){ return wordCount(text || '') > 25; }
 function itemHtml(it, qpre){
   var m = markText(it), h = '';
   if(it.kind === 'blank') return '<div style="height:2.5mm"></div>';
-  if(it.kind === 'section') return '<div class="sec">' + esc(it.text) + '</div>';
+  if(it.kind === 'section')
+    return '<div class="sec"><span class="sp"></span><span class="st">' + esc(it.text) +
+           '</span><span class="sm">' + sectionMarks(it) + '</span></div>';
   if(it.kind === 'lines'){
     for(var i = 0; i < it.n; i++) h += '<div class="ansline"></div>';
     return h;
@@ -472,12 +499,14 @@ function itemHtml(it, qpre){
            '</div></div>';
   if(it.kind === 'match'){
     h = '<table class="match"><tr class="h"><td class="lbl"></td><td>' + esc(it.head[0] || '') +
-        '</td><td class="lbl"></td><td>' + esc(it.head[1] || '') + '</td></tr>';
+        '</td><td class="lbl"></td><td>' + esc(it.head[1] || '') +
+        '</td><td class="ans">' + w('answer') + '</td></tr>';
     var letters = hindi() ? ['क','ख','ग','घ','ङ','च','छ','ज'] : 'abcdefgh'.split('');
     var romans = ['i','ii','iii','iv','v','vi','vii','viii'];
     it.rows.forEach(function(r, i){
       h += '<tr><td class="lbl">' + letters[i] + '.</td><td>' + esc(r[0] || '') +
-           '</td><td class="lbl">' + romans[i] + '.</td><td>' + esc(r[1] || '') + '</td></tr>';
+           '</td><td class="lbl">' + romans[i] + '.</td><td>' + esc(r[1] || '') +
+           '</td><td class="ans">' + esc('_______') + '</td></tr>';
     });
     return h + '</table>';
   }
@@ -798,9 +827,8 @@ function check(){
   }
   /* section-wise totals stated in a heading */
   items.filter(function(i){ return i.kind === 'section'; }).forEach(function(s, idx, arr){
-    var m = s.text.match(/(\d+)\s*marks/i);
-    if(!m) return;
-    var stated = parseFloat(m[1]);
+    if(s.marks === null) return;
+    var stated = s.marks;
     var from = items.indexOf(s), to = items.length;
     for(var j = from + 1; j < items.length; j++){ if(items[j].kind === 'section'){ to = j; break; } }
     var got = 0;
@@ -858,7 +886,9 @@ function partsCarryMarks(items, q){ return partsMarks(items, q).any; }
 /* what each line adds to the total: a question marked (6) whose parts split
    that 6 must not be counted twice, so its parts then count as nothing */
 function effectiveMarks(items){
-  var eff = items.map(function(i){ return i.marks || 0; });
+  /* the marks against a section heading state what the section adds up to; they
+     are not marks of their own */
+  var eff = items.map(function(i){ return i.kind === 'section' ? 0 : (i.marks || 0); });
   items.forEach(function(it, i){
     if(it.kind !== 'q' || it.marks === null) return;
     var r = partRange(items, it);

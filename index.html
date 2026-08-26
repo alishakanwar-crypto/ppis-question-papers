@@ -92,8 +92,14 @@
   .qline .n,.partline .n,.subline .n{white-space:nowrap}
   .qline .t,.partline .t,.subline .t{flex:1}
   .m{white-space:nowrap;text-align:right;font-weight:bold;padding-left:3mm}
-  .opts{display:flex;margin:1mm 0 0 calc(var(--pind) * 2.4);font-weight:normal}
-  .opts span{flex:1;padding-right:3mm}
+  /* the options of a question stand on one line at even stops, as on the school's
+     paper: a long option takes the room it needs instead of wrapping in its column */
+  .opts{display:flex;flex-wrap:wrap;column-gap:5mm;row-gap:1mm;
+        margin:1.5mm 0 0 calc(var(--pind) * 2.4);font-weight:normal}
+  /* an option is kept whole where it fits, and only wraps if it is wider than
+     the line itself, which happens at the largest font sizes */
+  .opts span{flex:1 1 auto;min-width:min(100%, max-content)}
+  .opts span.m{flex:0 0 auto}
   .para{margin:1mm 0 0 2mm;text-align:justify;orphans:2;widows:2}
   .box{margin:2mm 0 2mm calc(var(--pind) * 2.4);width:44mm;border-collapse:collapse}
   .box td{border:1px solid #000;padding:1mm;text-align:center}
@@ -101,8 +107,23 @@
   table.match td{border:1px solid #000;padding:.5mm 5mm;text-align:center}
   table.match td.lbl{padding:.5mm 2mm}
   table.match tr.h td{font-weight:bold}
-  .ansline{border-bottom:1px solid #000;height:8mm;margin:0 2mm}
-  .blank{display:inline-block;border-bottom:1px solid #000;min-width:24mm}
+  .ansline{border-bottom:1px solid #000;height:9.5mm;margin:0 2mm}
+  .blank{display:inline-block;border-bottom:1px solid #000;min-width:30mm}
+  /* a blank at the end of the line is written on, so it stands at its own stop
+     towards the right, clear of the words, with the marks beyond it */
+  .tb{flex:0 0 auto;text-align:right}
+  .tb .blank{min-width:0;margin-left:6mm}
+  /* a line the child fills in is given room to write in */
+  .partline.fill,.subline.fill,.qline.fill{margin-top:4mm}
+  /* a picture, printed beside its help box when the two are typed together */
+  .pic{border:1px solid #000;display:flex;align-items:center;justify-content:center;
+       overflow:hidden;margin:2mm 0 2mm calc(var(--pind) * 2.4)}
+  .pic img{max-width:100%;max-height:100%}
+  .pic i{color:#888;font-size:9pt;font-style:normal}
+  .boxpic{display:flex;gap:6mm;align-items:flex-start;
+          margin:2mm 0 2mm calc(var(--pind) * 2.4);page-break-inside:avoid;break-inside:avoid}
+  .boxpic .box,.boxpic .pic{margin:0}
+  .boxpic .pic{flex:1}
 
   @media print{
     html,body{background:#fff;padding:0;margin:0;width:auto}
@@ -114,6 +135,7 @@
     /* fixed, so the border is drawn round every printed page and not just the first */
     .frame{display:block;position:fixed;top:0;left:0;right:0;bottom:0;border:1px solid #000}
     .sec{page-break-after:avoid;break-after:avoid}
+    .pic i{visibility:hidden}
     @page{size:A4 portrait;margin:7mm 6mm}
   }
 </style>
@@ -155,9 +177,13 @@ Write the answers in the space provided.</textarea></div>
         marks at the end of the line: <code>(1)</code>, <code>(3x1=3)</code>, <code>(4x0.5=2)</code> or <code>[2]</code><br>
         <code>BOX: baskets | shopkeeper | money</code> a help box ·
         <code>MATCH: MASCULINE | FEMININE</code> then <code>uncle | niece</code> on each following line ·
-        <code>LINES: 4</code> four ruled answer lines · <code>____</code> a blank to fill · a blank line leaves a gap.</p>
+        <code>LINES: 4</code> four ruled answer lines · <code>PIC:</code> a picture (write <code>PIC: 50</code> for a taller one;
+        a <code>PIC:</code> straight after a <code>BOX:</code> prints beside it) ·
+        <code>____</code> a blank to fill · a blank line leaves a gap.</p>
       <p class="hint">To change the weight of a few words only: <code>*bold*</code> prints in bold,
         <code>~plain~</code> prints without bold on a line that is otherwise bold.</p>
+      <div class="f"><label for="picfile">Pictures for the <code>PIC:</code> lines, in order (they stay on this computer)</label>
+        <input type="file" id="picfile" accept="image/*" multiple></div>
       <div class="bar">
         <button class="btn btn-ghost" id="sample">Load a sample paper</button>
         <button class="btn btn-ghost" id="clear">Clear</button>
@@ -281,6 +307,7 @@ var OPT_RE   = new RegExp('^\\(?' + ROMAN + '\\)?[.)]\\s', 'i');
 var BOX_RE   = /^\s*BOX\s*:\s*(.+)$/i;
 var MATCH_RE = /^\s*MATCH\s*:\s*(.+)$/i;
 var LINES_RE = /^\s*LINES\s*:?\s*(\d+)\s*$/i;
+var PIC_RE   = /^\s*(?:PIC|PICTURE)\s*:?\s*(\d+)?\s*$/i;
 /* (1) · (3x1=3) · (4x0.5=2) · [2] · (2 marks) */
 var MARK_RE  = /[\[(]\s*(\d+(?:\.\d+)?(?:\s*[x\u00d7*]\s*\d+(?:\.\d+)?)?(?:\s*=\s*\d+(?:\.\d+)?)?)\s*(?:marks?|m|\u0905\u0902\u0915)?\s*[\])]\s*$/i;
 
@@ -322,7 +349,7 @@ function splitOptions(t){
 function cells(s){ return s.split('|').map(function(c){ return c.trim(); }); }
 
 function parse(src){
-  var out = [];
+  var out = [], pics = 0;
   var lines = src.split(/\r?\n/);
   for(var i = 0; i < lines.length; i++){
     var raw = lines[i], t = raw.trim();
@@ -341,6 +368,15 @@ function parse(src){
     if(bx){ out.push({ kind:'box', cells:cells(bx[1]), text:t, marks:null, line:i+1, raw:raw }); continue; }
     var ln = t.match(LINES_RE);
     if(ln){ out.push({ kind:'lines', n:parseInt(ln[1],10), text:t, marks:null, line:i+1, raw:raw }); continue; }
+    var pc = t.match(PIC_RE);
+    if(pc){
+      /* a height in millimetres, kept within a page so a slip of the finger
+         cannot print a paper thirty sheets long */
+      var ph = pc[1] ? Math.max(10, Math.min(240, parseInt(pc[1], 10))) : 42;
+      out.push({ kind:'pic', idx:pics++, h:ph,
+                 text:t, marks:null, line:i+1, raw:raw });
+      continue;
+    }
     if(SEC_RE.test(t)){ out.push({ kind:'section', text:t, marks:null, line:i+1, raw:raw }); continue; }
 
     if(isOptionRow(t)){
@@ -385,10 +421,30 @@ function markText(it){
 /* runs of underscores are the blanks a child writes on; *stars* bold a few words
    and ~tildes~ take the bold off them, for the odd line the teacher wants set
    differently from the rest */
+/* a longer run of underscores asks for a longer blank */
+function blankWidth(run){ return Math.max(30, Math.min(70, run.length * 3)); }
 function withBlanks(s){
-  return esc(s).replace(/_{3,}/g, '<span class="blank"></span>')
+  return esc(s).replace(/_{3,}/g, function(run){
+                 return '<span class="blank" style="min-width:' + blankWidth(run) + 'mm"></span>';
+               })
                .replace(/\*([^*\n]+)\*/g, '<b>$1</b>')
                .replace(/~([^~\n]+)~/g, '<span class="unb">$1</span>');
+}
+/* the words of the line, and the blank the child writes on at the end of it */
+var TRAIL_RE = /^(.*?[^\s_])\s*(_{3,})\s*$/;
+function lineBody(text){
+  var tr = text.match(TRAIL_RE);
+  if(!tr) return '<div class="t">' + withBlanks(text) + '</div>';
+  return '<div class="t">' + withBlanks(tr[1]) + '</div><div class="tb"><span class="blank" style="width:' +
+         blankWidth(tr[2]) + 'mm"></span></div>';
+}
+/* a line with a blank in the middle of it is written on, so it is given room */
+function fillClass(text){ return /_{3,}/.test(text) && !TRAIL_RE.test(text) ? ' fill' : ''; }
+/* the pictures the teacher has chosen on this computer, in the order the PIC:
+   lines appear; they are held only while the page is open, never uploaded */
+var PICS = [];
+function picHtml(idx){
+  return PICS[idx] ? '<img src="' + PICS[idx] + '" alt="">' : '<i>picture</i>';
 }
 /* the checker reads the words, not the marks round them */
 function stripMarks(s){ return String(s == null ? '' : s).replace(/[*~]/g, ''); }
@@ -410,6 +466,10 @@ function itemHtml(it, qpre){
     it.cells.forEach(function(c){ h += '<tr><td>' + esc(c) + '</td></tr>'; });
     return h + '</table>';
   }
+  if(it.kind === 'boxpic')
+    return '<div class="boxpic">' + itemHtml(it.box, qpre) +
+           '<div class="pic" style="height:' + it.pic.h + 'mm">' + picHtml(it.pic.idx) +
+           '</div></div>';
   if(it.kind === 'match'){
     h = '<table class="match"><tr class="h"><td class="lbl"></td><td>' + esc(it.head[0] || '') +
         '</td><td class="lbl"></td><td>' + esc(it.head[1] || '') + '</td></tr>';
@@ -426,17 +486,35 @@ function itemHtml(it, qpre){
     it.opts.forEach(function(o){ h += '<span>' + withBlanks(o) + '</span>'; });
     return h + (m ? '<span class="m" style="flex:0">' + m + '</span>' : '') + '</div>';
   }
+  if(it.kind === 'pic')
+    return '<div class="pic" style="height:' + it.h + 'mm">' + picHtml(it.idx) + '</div>';
   if(it.kind === 'q')
-    return '<div class="qline' + (isProse(it.text) ? ' reg' : '') + '"><div class="n">' +
-           qpre + it.num + '.</div><div class="t">' +
-           withBlanks(it.text) + '</div><div class="m">' + m + '</div></div>';
+    return '<div class="qline' + (isProse(it.text) ? ' reg' : '') + fillClass(it.text) +
+           '"><div class="n">' + qpre + it.num + '.</div>' + lineBody(it.text) +
+           '<div class="m">' + m + '</div></div>';
   if(it.kind === 'part' || it.kind === 'sub')
     return '<div class="' + (it.kind === 'part' ? 'partline' : 'subline') +
-           (/_{3,}/.test(it.text) || isProse(it.text) ? ' reg' : '') + '"><div class="n">' +
-           esc(it.label) + '.</div><div class="t">' + withBlanks(it.text) +
-           '</div><div class="m">' + m + '</div></div>';
+           (/_{3,}/.test(it.text) || isProse(it.text) ? ' reg' : '') + fillClass(it.text) +
+           '"><div class="n">' + esc(it.label) + '.</div>' + lineBody(it.text) +
+           '<div class="m">' + m + '</div></div>';
   return '<div class="para">' + withBlanks(it.text) +
          (m ? '<span class="m" style="float:right">' + m + '</span>' : '') + '</div>';
+}
+
+/* a help box and the picture that goes with it are printed side by side, the way
+   the school's own picture questions read */
+function pairBoxAndPicture(items){
+  var out = [];
+  for(var i = 0; i < items.length; i++){
+    var a = items[i], b = items[i+1];
+    if(a.kind === 'box' && b && b.kind === 'pic'){
+      out.push({ kind:'boxpic', box:a, pic:b });
+      i++;
+      continue;
+    }
+    out.push(a);
+  }
+  return out;
 }
 
 /* A section heading is tied to the opening of its first question so the printer
@@ -453,7 +531,8 @@ function groupForPrint(blocks){
       var k = blocks[j].kind;
       if(k === 'section') break;
       if(k === 'q'){ if(seenQ) break; seenQ = true; }
-      if(k === 'lines' || k === 'match' || k === 'box') break;   /* tall: let it flow */
+      if(k === 'lines' || k === 'match' || k === 'box' ||
+         k === 'boxpic' || k === 'pic') break;                   /* tall: let it flow */
       keep += blocks[j].html;
       if(k !== 'blank') kept++;
       j++;
@@ -494,7 +573,9 @@ function render(){
   h += '<hr class="rule">';
 
   var qpre = w('q');
-  h += groupForPrint(items.map(function(it){ return { kind:it.kind, html:itemHtml(it, qpre) }; }));
+  h += groupForPrint(pairBoxAndPicture(items).map(function(it){
+    return { kind:it.kind, html:itemHtml(it, qpre) };
+  }));
 
   h += '</div>';
   el('sheet').className = 'sheet' + (hindi() ? ' hi' : '') + (el('boldq').checked ? '' : ' plain');
@@ -614,9 +695,9 @@ function check(){
 
   /* --- line-level mechanical checks --- */
   items.forEach(function(it, idx){
-    if(it.kind === 'blank') return;
+    if(it.kind === 'blank' || it.kind === 'pic') return;
     var t = stripMarks(it.raw);
-    var answerFollows = ['opts','box','match','lines'].indexOf(nextKind(items, idx)) > -1;
+    var answerFollows = ['opts','box','match','lines','pic'].indexOf(nextKind(items, idx)) > -1;
 
     if(BEFORE_PUNCT.test(t))           add('err', it.line, 'Space before punctuation — "' + snip(t, BEFORE_PUNCT) + '"', true);
     if(/[.,;:?!][A-Za-z]/.test(t))     add('err', it.line, 'Missing space after punctuation — "' + snip(t, /[.,;:?!][A-Za-z]/) + '"', true);
@@ -896,6 +977,7 @@ var SAMPLE = [
   'SECTION – B (WRITING)',
   'Q2. Look at the picture and fill in the blanks using the help box given below. (5)',
   'BOX: baskets | shopkeeper | customers | money | crowded',
+  'PIC: 42',
   'a. The market is very ____ .',
   'b. The ____ sells fresh food to the people.',
   'c. Several ____ are buying things from different shops.',
@@ -993,6 +1075,20 @@ el('lang').addEventListener('change', languageChanged);
 el('check').addEventListener('click', check);
 el('fix').addEventListener('click', autofix);
 el('print').addEventListener('click', function(){ window.print(); });
+/* the chosen pictures fill the PIC: lines in order; they are read on this
+   computer and never sent anywhere */
+el('picfile').addEventListener('change', function(){
+  var files = Array.prototype.slice.call(this.files || []);
+  PICS = [];
+  if(!files.length){ render(); return; }
+  var left = files.length;
+  files.forEach(function(f, i){
+    var r = new FileReader();
+    r.onload = function(){ PICS[i] = r.result; if(--left === 0) render(); };
+    r.onerror = function(){ if(--left === 0) render(); };
+    r.readAsDataURL(f);
+  });
+});
 
 /* Chrome, Edge and Firefox name a saved PDF after the page title, so the paper is
    named after itself on the teacher's computer instead of "index.html" */

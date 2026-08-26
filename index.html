@@ -96,7 +96,9 @@
      paper: a long option takes the room it needs instead of wrapping in its column */
   .opts{display:flex;flex-wrap:wrap;column-gap:5mm;row-gap:1mm;
         margin:1.5mm 0 0 calc(var(--pind) * 2.4);font-weight:normal}
-  .opts span{flex:1 1 auto;white-space:nowrap}
+  /* an option is kept whole where it fits, and only wraps if it is wider than
+     the line itself, which happens at the largest font sizes */
+  .opts span{flex:1 1 auto;min-width:min(100%, max-content)}
   .opts span.m{flex:0 0 auto}
   .para{margin:1mm 0 0 2mm;text-align:justify;orphans:2;widows:2}
   .box{margin:2mm 0 2mm calc(var(--pind) * 2.4);width:44mm;border-collapse:collapse}
@@ -110,7 +112,7 @@
   /* a blank at the end of the line is written on, so it stands at its own stop
      towards the right, clear of the words, with the marks beyond it */
   .tb{flex:0 0 auto;text-align:right}
-  .tb .blank{min-width:0;width:32mm;margin-left:6mm}
+  .tb .blank{min-width:0;margin-left:6mm}
   /* a line the child fills in is given room to write in */
   .partline.fill,.subline.fill,.qline.fill{margin-top:4mm}
   /* a picture, printed beside its help box when the two are typed together */
@@ -368,7 +370,10 @@ function parse(src){
     if(ln){ out.push({ kind:'lines', n:parseInt(ln[1],10), text:t, marks:null, line:i+1, raw:raw }); continue; }
     var pc = t.match(PIC_RE);
     if(pc){
-      out.push({ kind:'pic', idx:pics++, h:pc[1] ? parseInt(pc[1],10) : 42,
+      /* a height in millimetres, kept within a page so a slip of the finger
+         cannot print a paper thirty sheets long */
+      var ph = pc[1] ? Math.max(10, Math.min(240, parseInt(pc[1], 10))) : 42;
+      out.push({ kind:'pic', idx:pics++, h:ph,
                  text:t, marks:null, line:i+1, raw:raw });
       continue;
     }
@@ -416,21 +421,22 @@ function markText(it){
 /* runs of underscores are the blanks a child writes on; *stars* bold a few words
    and ~tildes~ take the bold off them, for the odd line the teacher wants set
    differently from the rest */
+/* a longer run of underscores asks for a longer blank */
+function blankWidth(run){ return Math.max(30, Math.min(70, run.length * 3)); }
 function withBlanks(s){
   return esc(s).replace(/_{3,}/g, function(run){
-                 /* a longer run of underscores asks for a longer blank */
-                 return '<span class="blank" style="min-width:' +
-                        Math.max(30, Math.min(70, run.length * 3)) + 'mm"></span>';
+                 return '<span class="blank" style="min-width:' + blankWidth(run) + 'mm"></span>';
                })
                .replace(/\*([^*\n]+)\*/g, '<b>$1</b>')
                .replace(/~([^~\n]+)~/g, '<span class="unb">$1</span>');
 }
 /* the words of the line, and the blank the child writes on at the end of it */
-var TRAIL_RE = /^(.+?)\s*_{3,}\s*$/;
+var TRAIL_RE = /^(.*?[^\s_])\s*(_{3,})\s*$/;
 function lineBody(text){
   var tr = text.match(TRAIL_RE);
   if(!tr) return '<div class="t">' + withBlanks(text) + '</div>';
-  return '<div class="t">' + withBlanks(tr[1]) + '</div><div class="tb"><span class="blank"></span></div>';
+  return '<div class="t">' + withBlanks(tr[1]) + '</div><div class="tb"><span class="blank" style="width:' +
+         blankWidth(tr[2]) + 'mm"></span></div>';
 }
 /* a line with a blank in the middle of it is written on, so it is given room */
 function fillClass(text){ return /_{3,}/.test(text) && !TRAIL_RE.test(text) ? ' fill' : ''; }

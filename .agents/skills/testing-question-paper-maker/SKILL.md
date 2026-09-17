@@ -224,7 +224,28 @@ Gotchas:
 - `PIC: -5` and `PIC: abc` do not match `PIC_RE` and fall through to ordinary text (correct).
 - **`PIC: 9999` has no cap** — it produced 36 pages, 34 of them blank. Always try a silly height.
 - Arm a `page.on('request')` recorder *before* choosing files to prove nothing is uploaded; data
-  URIs mean the expected result is **zero** new requests.
+  URIs mean the expected result is **zero** new requests. In visible Chrome the equivalent is a
+  `PerformanceObserver({type:'resource',buffered:true})` armed via the console; expected entries
+  after all picture work are only `ppis-logo.png`, `words-en.txt`, `favicon.ico`.
+
+**Picture box (`#piclist` chips, PR #9/#10).** Each chosen file becomes a chip `N. name ×` with a
+thumbnail; picks **append**; `#picfile.value` is cleared after each pick; × splices one and
+re-renders; the `.note` (`No … / Only N PIC: line(s) in the paper yet…`) recomputes on every
+`#body` input and counts every `PIC_RE` form (`PIC`, `PIC:`, `PIC 50`, `PICTURE`); non-images are
+refused in red `Not a picture, so not used: <name>…`. Since #10, a file is accepted only once
+`new Image()` decodes it (a DOCX/PDF renamed `.jpg` is refused) and each batch goes through a
+`PICQUEUE` promise chain, so two picks in the same tick cannot overwrite each other. Testing tips:
+- Drive the **native GTK chooser**: click *Choose Files*, type the absolute path into the location
+  bar, then click *Open*. Do not press Ctrl+L right after clicking the input — focus may still be in
+  Chrome and it opens the path as a new tab.
+- Clipboard image paste: `nohup xclip -selection clipboard -t image/png -i pic.png &` (a foreground
+  xclip dies and the selection vanishes), click a blank page area, Ctrl+V → chip named `image.png`.
+  Ctrl+V inside `#body` must paste text and add no chip.
+- Same-tick queue probe from the console: build two `File`s from data URIs, call `addPics([a]);
+  addPics([b]); await PICQUEUE;` and assert `PICS.length` grew by 2 in order.
+- **Clear** only empties `#body`; chips/PICS survive (judgement call — report, don't fail).
+- Verify the printed PDF via the real *Save the PDF* button: PyMuPDF `get_image_rects()` plus the
+  centre-pixel colour of each rect (solid-colour fixtures) proves ordering; exclude the 460×130 logo.
 
 **Pagination.** `pic`/`boxpic` now break out of `groupForPrint()`'s section-keep group, so re-check
 "no `SECTION` heading with <2 lines under it" across padding variants. The **blank trailing page**

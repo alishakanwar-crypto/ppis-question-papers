@@ -47,6 +47,13 @@
   .ok{border:1px solid #BEE3CE;background:var(--goodwash);color:var(--good);padding:10px 12px;
       border-radius:4px;font-size:13px;font-weight:600;margin-top:14px}
   .count{font-size:12px;color:var(--soft);margin-top:10px}
+  .piclist{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;font-size:12px}
+  .piclist .pic{display:flex;align-items:center;gap:6px;border:1px solid var(--rule);border-radius:6px;padding:4px 8px;background:#fff}
+  .piclist .pic img{height:36px;width:auto;max-width:60px;object-fit:contain}
+  .piclist .pic b{font-weight:600}
+  .piclist .pic button{border:0;background:none;color:#B42318;cursor:pointer;font-size:14px;padding:0 2px}
+  .piclist .bad{color:#B42318}
+  .piclist .note{color:var(--soft);width:100%}
   .chk{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--soft);margin-bottom:8px}
   .chk input{width:auto}
 
@@ -192,7 +199,9 @@ Write the answers in the space provided.</textarea></div>
       <p class="hint">To change the weight of a few words only: <code>*bold*</code> prints in bold,
         <code>~plain~</code> prints without bold on a line that is otherwise bold.</p>
       <div class="f"><label for="picfile">Pictures for the <code>PIC:</code> lines, in order (they stay on this computer)</label>
-        <input type="file" id="picfile" accept="image/*" multiple></div>
+        <input type="file" id="picfile" multiple>
+        <p class="hint" style="margin-top:6px">Only needed when a question has a picture (type <code>PIC:</code> on its own line where it should print). JPG or PNG files; or copy a picture / take a screenshot and press Ctrl+V anywhere outside the typing boxes.</p>
+        <div id="piclist" class="piclist"></div></div>
       <div class="bar">
         <button class="btn btn-ghost" id="sample">Load a sample paper</button>
         <button class="btn btn-ghost" id="clear">Clear</button>
@@ -1107,18 +1116,60 @@ el('fix').addEventListener('click', autofix);
 el('print').addEventListener('click', function(){ window.print(); });
 /* the chosen pictures fill the PIC: lines in order; they are read on this
    computer and never sent anywhere */
-el('picfile').addEventListener('change', function(){
-  var files = Array.prototype.slice.call(this.files || []);
-  PICS = [];
-  if(!files.length){ render(); return; }
-  var left = files.length;
-  files.forEach(function(f, i){
+var PICNAMES = [], PICBAD = [];
+function picLines(){ return (el('body').value.match(/^\s*PIC:/gmi) || []).length; }
+function showPics(){
+  var h = '';
+  PICS.forEach(function(src, i){
+    h += '<span class="pic"><img src="' + src + '" alt=""><span><b>' + (i + 1) + '.</b> ' +
+         esc(PICNAMES[i] || '') + '</span><button type="button" data-i="' + i +
+         '" title="Remove">\u00d7</button></span>';
+  });
+  if(PICBAD.length)
+    h += '<span class="bad">Not a picture, so not used: ' + esc(PICBAD.join(', ')) +
+         '. Save it as a JPG or PNG (or take a screenshot of it) and choose that.</span>';
+  var n = picLines();
+  if(PICS.length && n < PICS.length)
+    h += '<span class="note">' + (n ? 'Only ' + n : 'No') + ' <code>PIC:</code> line' + (n === 1 ? '' : 's') +
+         ' in the paper yet \u2014 type <code>PIC:</code> on its own line where each picture should print.</span>';
+  if(!PICS.length && !PICBAD.length) h = '';
+  el('piclist').innerHTML = h;
+}
+function addPics(files){
+  files = Array.prototype.slice.call(files || []);
+  PICBAD = [];
+  var imgs = files.filter(function(f){ return /^image\//.test(f.type) || /\.(jpe?g|png|gif|bmp|webp)$/i.test(f.name); });
+  files.forEach(function(f){ if(imgs.indexOf(f) < 0) PICBAD.push(f.name || 'file'); });
+  if(!imgs.length){ showPics(); return; }
+  var start = PICS.length, left = imgs.length;
+  imgs.forEach(function(f, i){
     var r = new FileReader();
-    r.onload = function(){ PICS[i] = r.result; if(--left === 0) render(); };
-    r.onerror = function(){ if(--left === 0) render(); };
+    PICNAMES[start + i] = f.name || 'pasted picture';
+    r.onload = function(){ PICS[start + i] = r.result; if(--left === 0){ showPics(); render(); } };
+    r.onerror = function(){ PICS[start + i] = ''; if(--left === 0){ showPics(); render(); } };
     r.readAsDataURL(f);
   });
+}
+/* the chosen pictures fill the PIC: lines in order; they are read on this
+   computer and never sent anywhere. Choosing again adds to the list, so a
+   teacher can pick the pictures one at a time from different folders */
+el('picfile').addEventListener('change', function(){ addPics(this.files); this.value = ''; });
+el('piclist').addEventListener('click', function(e){
+  var b = e.target.closest('button'); if(!b) return;
+  var i = +b.getAttribute('data-i');
+  PICS.splice(i, 1); PICNAMES.splice(i, 1); showPics(); render();
 });
+/* a picture copied from a document or a screenshot can be pasted straight in */
+document.addEventListener('paste', function(e){
+  var t = e.target, tag = t && t.tagName;
+  if(tag === 'TEXTAREA' || tag === 'INPUT') return;
+  var items = (e.clipboardData && e.clipboardData.files) || [];
+  var imgs = Array.prototype.filter.call(items, function(f){ return /^image\//.test(f.type); });
+  if(!imgs.length) return;
+  e.preventDefault();
+  addPics(imgs);
+});
+el('body').addEventListener('input', showPics);
 
 /* Chrome, Edge and Firefox name a saved PDF after the page title, so the paper is
    named after itself on the teacher's computer instead of "index.html" */

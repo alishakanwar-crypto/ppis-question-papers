@@ -1117,7 +1117,7 @@ el('print').addEventListener('click', function(){ window.print(); });
 /* the chosen pictures fill the PIC: lines in order; they are read on this
    computer and never sent anywhere */
 var PICNAMES = [], PICBAD = [];
-function picLines(){ return (el('body').value.match(/^\s*PIC:/gmi) || []).length; }
+function picLines(){ return parse(el('body').value).filter(function(it){ return it.kind === 'pic'; }).length; }
 function showPics(){
   var h = '';
   PICS.forEach(function(src, i){
@@ -1135,19 +1135,35 @@ function showPics(){
   if(!PICS.length && !PICBAD.length) h = '';
   el('piclist').innerHTML = h;
 }
+/* each batch is read into its own list and only then appended, so two quick
+   selections cannot write over each other; a file is accepted only once the
+   browser has actually decoded it as a picture */
+var PICQUEUE = Promise.resolve();
+function readPicture(f){
+  return new Promise(function(done){
+    var r = new FileReader();
+    r.onerror = function(){ done(null); };
+    r.onload = function(){
+      var img = new Image();
+      img.onload = function(){ done(r.result); };
+      img.onerror = function(){ done(null); };
+      img.src = r.result;
+    };
+    r.readAsDataURL(f);
+  });
+}
 function addPics(files){
   files = Array.prototype.slice.call(files || []);
-  PICBAD = [];
-  var imgs = files.filter(function(f){ return /^image\//.test(f.type) || /\.(jpe?g|png|gif|bmp|webp)$/i.test(f.name); });
-  files.forEach(function(f){ if(imgs.indexOf(f) < 0) PICBAD.push(f.name || 'file'); });
-  if(!imgs.length){ showPics(); return; }
-  var start = PICS.length, left = imgs.length;
-  imgs.forEach(function(f, i){
-    var r = new FileReader();
-    PICNAMES[start + i] = f.name || 'pasted picture';
-    r.onload = function(){ PICS[start + i] = r.result; if(--left === 0){ showPics(); render(); } };
-    r.onerror = function(){ PICS[start + i] = ''; if(--left === 0){ showPics(); render(); } };
-    r.readAsDataURL(f);
+  if(!files.length) return;
+  PICQUEUE = PICQUEUE.then(function(){
+    return Promise.all(files.map(readPicture));
+  }).then(function(results){
+    PICBAD = [];
+    results.forEach(function(src, i){
+      var name = files[i].name || 'pasted picture';
+      if(src){ PICS.push(src); PICNAMES.push(name); } else PICBAD.push(name);
+    });
+    showPics(); render();
   });
 }
 /* the chosen pictures fill the PIC: lines in order; they are read on this

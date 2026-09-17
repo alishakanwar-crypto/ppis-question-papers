@@ -66,24 +66,27 @@ survives into the actual filename on disk. Also confirm the tab title reverts af
 For a non-invasive scripted check, listen for `beforeprint` and record `document.title` there
 rather than stubbing `window.print` — it exercises the real print path.
 
-**Known live-hint staleness (check whether still present).** `refreshPdfName()` is wired only to
-`input` on `grade`/`subject`/`title` plus one call at load. `#sample` and `languageChanged()`
-assign `.value` programmatically, which does **not** fire `input`, and neither calls
-`refreshPdfName()`. So after "Load a sample paper" or a language switch the hint can show the
-*previous* paper's name while the file saves under the new one. Diagnostic that pins the root
-cause: type one character into Title — the hint jumps to the correct value, proving
-`pdfFileName()` is fine and only the refresh trigger is missing. A likely fix is calling
-`refreshPdfName()` at the end of the sample loader and of `languageChanged()`.
+**Live-hint staleness — fixed, but the trap for the tester remains.** `refreshPdfName()` is wired
+to `input` on `grade`/`subject`/`title`, and — since PR #4 — is also called at the end of the
+`#sample` handler and of `languageChanged()`, which assign `.value` programmatically and so do not
+fire `input`. `#pdfname` therefore tracks `pdfFileName()` on every path; assert
+`#pdfname === pdfFileName()+'.pdf'` and expect it to hold.
+
+The trap: switching `#lang` to Hindi does **not** by itself change the filename, because Grade /
+Subject / Title still hold the English text. The Hindi name appears only after the Hindi sample (or
+Hindi field values) is loaded. Comparing the hint against a hard-coded Hindi expectation right
+after the language switch reports a defect that is not one — always compare against
+`pdfFileName()` evaluated in the page.
 
 **Filename edge cases worth asserting** (compare `#pdfname` against `pdfFileName()+'.pdf'` every
 time, so a stale hint is caught): each field blank individually; all three blank →
 `Question-paper`; a title of every forbidden character; leading/trailing/multiple spaces and
-tab/newline; Devanagari; a 300-char title. Two cosmetic quirks that are **not** crashes: a field
-consisting only of forbidden characters passes the `.trim()` truthiness test and contributes an
-empty part, leaving a dangling `Class-` or trailing hyphen. And there is **no length cap** — a
-300-char title yields a 321-byte name that Linux rejects with `Errno 36 File name too long`, so a
-very long title cannot be saved. Verify a long name with a plain `open()` in `/tmp` rather than
-driving the whole GUI.
+tab/newline; Devanagari; a 300-char title. Both former quirks are fixed and are now the assertions
+to make: `pdfFileName()` pushes only non-empty parts and ends with `.replace(/-+$/,'')`, so a field
+of nothing but forbidden characters leaves **no** dangling `Class-` or trailing hyphen; and `clip()`
+cuts the joined name to **150 bytes**, counting a Devanagari letter as three and never splitting a
+letter, so even a 300-char title saves. Verify a long name with a plain `open()` in `/tmp` rather
+than driving the whole GUI.
 
 ## Prove formatting reaches the *printed PDF*, not just the preview
 
@@ -184,22 +187,23 @@ convincing artefact for a teacher reviewing the change; compare structure (heade
 column, one-line option rows, right-hand blanks, box-beside-picture, ruled answer lines), not
 pixels — the school's Calibri cannot be resolved here.
 
-**Option rows** (`.opts` flex + `.opts span{white-space:nowrap}`). Assert per row: all spans share
+**Option rows** (`.opts` flex + `.opts span{flex:1 1 auto;min-width:min(100%, max-content)}` — the
+old `white-space:nowrap`, which clipped long options, is gone). Assert per row: all spans share
 one `top` where they fit; `scrollWidth <= clientWidth + 1` (a nowrap column that wrapped internally
 clips instead, so this catches it); no overlap for spans sharing a `top`; `span.m` (marks) is
 rightmost and unstretched. **Long options can overflow the page at large font sizes** — at 16pt two
 spans measured past the page's right content edge. Always re-measure span `right` against the page
 right edge at 10pt *and* 16pt; a pass at the default size proves nothing.
 
-**Trailing blanks.** `TRAIL_RE = /^(.+?)\s*_{3,}\s*$/` splits a trailing underscore run into a
-`.tb` cell so the blank sits right, before the marks. Two things to check every time:
-- `(.+?)` must consume ≥1 char, so a line whose text is **only** ≥4 underscores (`a. ____`) leaves
-  a **literal `_`** in the text plus a blank. `___` (exactly 3) does not match and is safe. This bug
-  class has been "fixed once" already and regressed — verify by reading the **PDF text layer** and
-  counting literal `_` characters, not just eyeballing the preview.
-- `.tb .blank{width:32mm}` is **fixed**, so trailing blanks are *not* length-scaled even though
-  mid-line blanks (`withBlanks()`, `max(30,min(70,len*3))mm`) are. Different underscore run lengths
-  print identical trailing blanks — a design inconsistency, not a crash.
+**Trailing blanks.** `TRAIL_RE = /^(.*?[^\s_])\s*(_{3,})\s*$/` splits a trailing underscore run into
+a `.tb` cell so the blank sits right, before the marks. Two things to check every time:
+- The capture requires a final non-space, non-underscore character, so a line whose text is **only**
+  underscores (`a. ____`) does not match and falls through to ordinary blank rendering — no literal
+  `_` is printed. This bug class regressed once already, so verify by reading the **PDF text layer**
+  and counting literal `_` characters, not by eyeballing the preview.
+- Trailing blanks are length-scaled like mid-line ones: both go through
+  `blankWidth(run) = max(30, min(70, run.length*3))mm` as a `min-width`, so a longer underscore run
+  must print a longer blank. Assert the widths differ for `____` vs `______________`.
 Re-run trailing-blank checks at changed `#fsize`, `#fline` and `#find`: if the finding is identical
 at all four settings it is a parser bug, not a layout artefact, and that distinction belongs in the
 report.

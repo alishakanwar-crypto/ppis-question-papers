@@ -254,6 +254,31 @@ curing it. Always print the same padded papers from a `git worktree` of `main`
 (`git worktree add /tmp/…/mainwt main` + a second `http.server`) and present the two columns side by
 side before attributing it to the change under test.
 
+## Word (.docx) upload
+
+`#docxfile` (in box 2) unzips the `.docx` in the page (`unzip()` + `DecompressionStream`), turns
+`word/document.xml` into body lines (`buildFromDocx()`, `tidyLine()`, `tableLines()`), fills box 1
+from the lines above the first section/question (`readHeader()`), replaces `PICS` with the Word
+pictures and, if `#docxpdf` is ticked, clicks `#savepdf`. Status goes to `#docxnote`.
+- Make fixtures with python-docx: header lines (`Class: III\tSubject: English`, `Max. Marks: 20`),
+  `General Instructions:` + `1.`/`2.` lines (must land in `#instr`, not become Q1/Q2), `Q.1 …\t4 marks`,
+  `a) …\t(1)`, `(a) cat\t(b) dog` (stays one option row), a 2-col table with a `Column A` header
+  (→ `MATCH:`), a 1-row table of words (→ `BOX:`), `add_picture` (→ `PIC: <height mm>`), dotted
+  lines (→ `LINES: n`), `List Number` paragraphs (Word auto-numbering rebuilt from `numbering.xml`),
+  and a Hindi one (`प्रश्न 1.` → `प्र1.`, `lang` switches to `hi`).
+- Stub `window.print` in `add_init_script` to count the auto-open, then `page.pdf()` with print media.
+- Real school papers in `~/eng11/*.docx` and `~/gk2/g*.docx` (if present) start with the letterhead
+  logo as a picture: it must be dropped, not become `PIC:` line 1. Long numbered passage paragraphs
+  (>30 words, no marks) become `(1) …` so they are not printed as questions.
+- An old `.doc` (OLE file) must show the "Save As .docx" message, never throw.
+- A valid but empty `.docx` must leave the current paper, fields and `PICS` alone and not print.
+- Tables: only a table after a "match" line (or with a `Column` header) becomes `MATCH:`; data tables
+  (e.g. the Mid-Term "Reason | Percentage" survey) stay as `a | b` rows; a one-row
+  `SECTION C … | (31 Marks)` table becomes a section heading; `picture | 18. question` rows become
+  the question line then the picture cell.
+- An unsupported Word picture (e.g. `.emf`) leaves `PICS[i] = ''` with an "empty" chip; choosing a
+  PNG afterwards must fill that slot (`PICS.indexOf('')`), not append, and auto-print is skipped.
+
 ## Devin Secrets Needed
 
 None — the page is static with no backend, no login and no API keys.

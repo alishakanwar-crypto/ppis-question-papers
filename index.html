@@ -47,6 +47,9 @@
   .ok{border:1px solid #BEE3CE;background:var(--goodwash);color:var(--good);padding:10px 12px;
       border-radius:4px;font-size:13px;font-weight:600;margin-top:14px}
   .count{font-size:12px;color:var(--soft);margin-top:10px}
+  .upload{border:1px dashed var(--rule);border-radius:8px;padding:10px 12px;margin-bottom:12px;background:#FAFBFD;font-size:13px}
+  .upload label{display:block;margin-bottom:6px}
+  .hint.ok{color:#05603A} .hint.bad,.hint .bad{color:#B42318}
   .piclist{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;font-size:12px}
   .piclist .pic{display:flex;align-items:center;gap:6px;border:1px solid var(--rule);border-radius:6px;padding:4px 8px;background:#fff}
   .piclist .pic img{height:36px;width:auto;max-width:60px;object-fit:contain}
@@ -184,6 +187,14 @@ Write the answers in the space provided.</textarea></div>
       <div class="chk"><input type="checkbox" id="showNames" checked><label for="showNames" style="margin:0">Print the Name / Section line</label></div>
 
       <h2 style="margin-top:20px">2 &nbsp;Questions</h2>
+      <div class="upload">
+        <label for="docxfile"><b>Have the paper in Word?</b> Upload the .docx and it is laid out in the school format,
+          checked for errors and made into a PDF.</label>
+        <input type="file" id="docxfile" accept=".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+        <div class="chk" style="margin:6px 0 0"><input type="checkbox" id="docxpdf" checked>
+          <label for="docxpdf" style="margin:0">Open the Save-as-PDF window as soon as the file is read</label></div>
+        <p id="docxnote" class="hint"></p>
+      </div>
       <textarea id="body" spellcheck="true"></textarea>
       <p class="hint">How to type it — exactly as the paper reads:<br>
         <code>SECTION - A (READING)</code> a section heading — write <code>SECTION A 6 marks</code>
@@ -322,8 +333,9 @@ var NUM_RE   = /^\s*(?:Q|\u092a\u094d\u0930(?:\u0936\u094d\u0928)?)?\s*\.?\s*(\d
 var PART_RE  = /^\s*\(?([A-Z])\)?\s*[.)]\s+(.*)$/;
 var SUB_RE   = /^\s*\(?([a-z]|[\u0915-\u0939])\)?\s*[.)]\s+(.*)$/;
 var ROMAN    = '(?:i{1,3}|iv|v|vi{1,3}|vi|ix|x)';
-var OPT_ONE  = new RegExp('(?:^|\\s)\\(?' + ROMAN + '\\)?[.)]\\s', 'gi');
-var OPT_RE   = new RegExp('^\\(?' + ROMAN + '\\)?[.)]\\s', 'i');
+/* (a) (b) (c) in brackets is an option row too, the way many Word papers set MCQs */
+var OPT_ONE  = new RegExp('(?:^|\\s)(?:\\(?' + ROMAN + '\\)?[.)]|\\([a-h]\\))\\s', 'gi');
+var OPT_RE   = new RegExp('^(?:\\(?' + ROMAN + '\\)?[.)]|\\([a-h]\\))\\s', 'i');
 var BOX_RE   = /^\s*BOX\s*:\s*(.+)$/i;
 var MATCH_RE = /^\s*MATCH\s*:\s*(.+)$/i;
 var LINES_RE = /^\s*LINES\s*:?\s*(\d+)\s*$/i;
@@ -1121,8 +1133,8 @@ function picLines(){ return parse(el('body').value).filter(function(it){ return 
 function showPics(){
   var h = '';
   PICS.forEach(function(src, i){
-    h += '<span class="pic"><img src="' + src + '" alt=""><span><b>' + (i + 1) + '.</b> ' +
-         esc(PICNAMES[i] || '') + '</span><button type="button" data-i="' + i +
+    h += '<span class="pic">' + (src ? '<img src="' + src + '" alt="">' : '') + '<span><b>' + (i + 1) + '.</b> ' +
+         esc(PICNAMES[i] || '') + (src ? '' : ' \u2014 <span class="bad">empty: choose a JPG/PNG to fill it</span>') + '</span><button type="button" data-i="' + i +
          '" title="Remove">\u00d7</button></span>';
   });
   if(PICBAD.length)
@@ -1161,7 +1173,10 @@ function addPics(files){
     PICBAD = [];
     results.forEach(function(src, i){
       var name = files[i].name || 'pasted picture';
-      if(src){ PICS.push(src); PICNAMES.push(name); } else PICBAD.push(name);
+      if(src){
+        var gap = PICS.indexOf('');
+        if(gap >= 0){ PICS[gap] = src; PICNAMES[gap] = name; } else { PICS.push(src); PICNAMES.push(name); }
+      } else PICBAD.push(name);
     });
     showPics(); render();
   });
@@ -1238,6 +1253,450 @@ el('sample').addEventListener('click', function(){
 el('clear').addEventListener('click', function(){
   if(!confirm('Clear the questions? The paper details stay as they are.')) return;
   el('body').value = ''; save(); render(); el('report').innerHTML = '';
+});
+
+/* ------------------------------------------------------------------ Word upload */
+/* A .docx is a zip of XML files. It is opened here with the browser's own
+   decompressor, so the paper never leaves this computer, and turned into the
+   lines the maker already understands (Q1., a., i. ii., BOX:, MATCH:, LINES:,
+   PIC:), with the header details moved into box 1. */
+var WNS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+var RNS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+function u16(b, o){ return b[o] | (b[o+1] << 8); }
+function u32(b, o){ return (b[o] | (b[o+1] << 8) | (b[o+2] << 16)) + b[o+3] * 16777216; }
+function unzip(buf){
+  var b = new Uint8Array(buf), e = -1, files = {};
+  for(var i = b.length - 22; i >= Math.max(0, b.length - 65557); i--){
+    if(u32(b, i) === 0x06054b50){ e = i; break; }
+  }
+  if(e < 0) return null;
+  var n = u16(b, e + 10), p = u32(b, e + 16), dec = new TextDecoder();
+  for(var k = 0; k < n && u32(b, p) === 0x02014b50; k++){
+    var nl = u16(b, p + 28), lo = u32(b, p + 42);
+    var start = lo + 30 + u16(b, lo + 26) + u16(b, lo + 28);
+    files[dec.decode(b.subarray(p + 46, p + 46 + nl))] =
+      { method:u16(b, p + 10), data:b.subarray(start, start + u32(b, p + 20)) };
+    p += 46 + nl + u16(b, p + 30) + u16(b, p + 32);
+  }
+  return files;
+}
+function zipBytes(files, name){
+  var f = files[name];
+  if(!f) return Promise.resolve(null);
+  if(f.method === 0) return Promise.resolve(f.data);
+  var s = new Blob([f.data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Response(s).arrayBuffer().then(function(a){ return new Uint8Array(a); });
+}
+function zipXml(files, name){
+  return zipBytes(files, name).then(function(b){
+    return b ? new DOMParser().parseFromString(new TextDecoder().decode(b), 'application/xml') : null;
+  });
+}
+function wkids(n, name){
+  return Array.prototype.filter.call(n ? n.childNodes : [], function(c){ return c.localName === name; });
+}
+function wkid(n, name){ return wkids(n, name)[0] || null; }
+function wattr(n, name){ return n ? (n.getAttributeNS(WNS, name) || n.getAttribute('w:' + name) || '') : ''; }
+
+/* Word's own automatic numbering is not in the text, so it is rebuilt here */
+var HI_LETTERS = ['क','ख','ग','घ','ङ','च','छ','ज','झ','ञ','ट','ठ','ड','ढ','ण','त','थ','द','ध','न'];
+function roman(n){
+  var r = '', v = [[10,'x'],[9,'ix'],[5,'v'],[4,'iv'],[1,'i']];
+  v.forEach(function(p){ while(n >= p[0]){ r += p[1]; n -= p[0]; } });
+  return r;
+}
+function numText(fmt, n){
+  if(/Letter$/.test(fmt)){ var c = String.fromCharCode(96 + ((n - 1) % 26) + 1); return fmt === 'upperLetter' ? c.toUpperCase() : c; }
+  if(/Roman$/.test(fmt)) return roman(n);
+  if(fmt === 'hindiConsonants' || fmt === 'hindiVowels') return HI_LETTERS[(n - 1) % HI_LETTERS.length];
+  if(fmt === 'bullet' || fmt === 'none') return null;
+  return String(n);
+}
+function Numbering(numDoc, styleDoc){
+  var abs = {}, nums = {}, styles = {}, count = {};
+  if(numDoc){
+    wkids(numDoc.documentElement, 'abstractNum').forEach(function(a){
+      var lv = {};
+      wkids(a, 'lvl').forEach(function(l){
+        lv[wattr(l, 'ilvl')] = { fmt:wattr(wkid(l, 'numFmt'), 'val') || 'decimal',
+                                 start:parseInt(wattr(wkid(l, 'start'), 'val') || '1', 10),
+                                 text:wattr(wkid(l, 'lvlText'), 'val') };
+      });
+      abs[wattr(a, 'abstractNumId')] = lv;
+    });
+    wkids(numDoc.documentElement, 'num').forEach(function(n){
+      nums[wattr(n, 'numId')] = wattr(wkid(n, 'abstractNumId'), 'val');
+    });
+  }
+  if(styleDoc) wkids(styleDoc.documentElement, 'style').forEach(function(s){
+    var pp = wkid(s, 'pPr'), np = wkid(pp, 'numPr');
+    styles[wattr(s, 'styleId')] = { numPr:np, based:wattr(wkid(s, 'basedOn'), 'val') };
+  });
+  function styleNum(id, depth){
+    var s = styles[id];
+    if(!s || depth > 8) return null;
+    return s.numPr || styleNum(s.based, depth + 1);
+  }
+  this.label = function(pPr){
+    var np = wkid(pPr, 'numPr') || styleNum(wattr(wkid(pPr, 'pStyle'), 'val'), 0);
+    if(!np) return null;
+    var id = wattr(wkid(np, 'numId'), 'val'), lvl = parseInt(wattr(wkid(np, 'ilvl'), 'val') || '0', 10);
+    var a = nums[id];
+    if(!id || id === '0' || a === undefined || !abs[a]) return null;
+    var c = count[a] = count[a] || [], def = abs[a];
+    c[lvl] = c[lvl] === undefined ? (def[lvl] ? def[lvl].start : 1) : c[lvl] + 1;
+    c.length = lvl + 1;
+    var me = def[lvl] || { fmt:'decimal', text:'%' + (lvl + 1) + '.' };
+    if(numText(me.fmt, 1) === null) return null;
+    return (me.text || '%' + (lvl + 1) + '.').replace(/%(\d)/g, function(_, k){
+      var L = parseInt(k, 10) - 1, d = def[L] || { fmt:'decimal', start:1 };
+      return numText(d.fmt, c[L] === undefined ? d.start : c[L]) || '';
+    });
+  };
+}
+
+/* the words of one paragraph, with its pictures in reading order */
+function paraContent(p){
+  var out = { s:'', pics:[] };
+  (function walk(n){
+    Array.prototype.forEach.call(n.childNodes, function(c){
+      var ln = c.localName;
+      if(!ln || ln === 'Fallback' || ln === 'pPr' || ln === 'rPr' || ln === 'instrText' ||
+         ln === 'delText' || ln === 'del') return;
+      if(ln === 't') out.s += c.textContent;
+      else if(ln === 'tab' || ln === 'ptab') out.s += '\t';
+      else if(ln === 'br' || ln === 'cr') out.s += '\n';
+      else if(ln === 'noBreakHyphen') out.s += '-';
+      else if(ln === 'p'){ out.s += '\n'; walk(c); }          /* a text box inside the line */
+      else if(ln === 'drawing' || ln === 'pict'){
+        var blip = c.getElementsByTagNameNS('*', 'blip')[0] || c.getElementsByTagNameNS('*', 'imagedata')[0];
+        var ext = c.getElementsByTagNameNS('*', 'extent')[0];
+        var rid = blip && (blip.getAttributeNS(RNS, 'embed') || blip.getAttributeNS(RNS, 'id') ||
+                           blip.getAttribute('r:embed') || blip.getAttribute('r:id'));
+        if(rid) out.pics.push({ rid:rid, h:ext ? Math.round(parseInt(ext.getAttribute('cy'), 10) / 36000) : 0 });
+        var tb = c.getElementsByTagNameNS(WNS, 'txbxContent')[0];
+        if(tb) walk(tb);
+      }
+      else walk(c);
+    });
+  })(p);
+  return out;
+}
+
+/* one line of the Word file, written the way the maker reads it */
+var IMP_MARK = /\t[\t ]*[\[(]?\s*(\d+(?:\.\d+)?(?:\s*[x\u00d7*]\s*\d+(?:\.\d+)?)?(?:\s*=\s*\d+(?:\.\d+)?)?)\s*(?:marks?|m|\u0905\u0902\u0915)?\s*[\])]?\s*$/i;
+function tidyLine(s, hi){
+  s = s.replace(/[\u00a0\u2002\u2003\u2009]/g, ' ').replace(/(\d)\s*\u00bd/g, '$1.5').replace(/\u00bd/g, '0.5');
+  if(!MARK_RE.test(s.replace(/\t+/g, ' ').trim())){
+    var m = s.match(IMP_MARK);
+    if(m && m.index > 0) s = s.slice(0, m.index) + ' (' + m[1].replace(/\s+/g, '') + ')';
+    else s = s.replace(/\s(\d+(?:\.\d+)?)\s*(?:marks?|\u0905\u0902\u0915)\s*$/i, ' ($1)');
+  }
+  s = s.replace(/[\t ]+/g, ' ').trim();
+  /* dotted and ellipsis blanks become the maker's underscore blanks */
+  s = s.replace(/(?:\.\s?){4,}|\u2026{2,}|_{3,}/g, function(run){
+    return new Array(Math.max(4, Math.min(24, Math.round(run.replace(/\s/g, '').length * 0.7))) + 1).join('_');
+  });
+  /* Q.1 · Q 1 · Que 1: · Question 1 · 1) · 1: → Q1. ; प्रश्न 1 · प्र.1 → प्र1. */
+  s = s.replace(/^(?:Q(?:ue(?:s(?:tion)?)?)?|\u092a\u094d\u0930\u0936\u094d\u0928|\u092a\u094d\u0930)\s*(?:no\.?)?\s*[.\-:]?\s*(\d{1,2})\s*(?:[.):\-]\s*)?(?=\S)/i,
+                function(_, n){ return (hi ? '\u092a\u094d\u0930' : 'Q') + n + '. '; });
+  s = s.replace(/^(\d{1,2})(?:\.(?!\d)|\)|:)\s*(?=\S)/, '$1. ');
+  /* a) · (a) · A) → a. / A. ; but a row of several lettered options stays a row */
+  var lets = s.match(/(?:^|\s)\(?[a-h]\)\s/gi);
+  if(lets && lets.length >= 2 && /^\(?[a-h]\)\s/i.test(s))
+    s = s.replace(/(^|\s)\(?([a-h])\)\s/gi, '$1($2) ');
+  else s = s.replace(/^\(?([a-zA-Z]|[\u0915-\u0939])\)\s*(?=\S)/, '$1. ');
+  return s;
+}
+
+var HEAD_KEYS = /(academic\s+session|session|class|grade|subject|time\s+allowed|time|duration|max(?:imum)?\.?\s*marks?|m\.\s*m\.?|total\s+marks|\u0915\u0915\u094d\u0937\u093e|\u0935\u093f\u0937\u092f|\u0938\u092e\u092f|\u0905\u0927\u093f\u0915\u0924\u092e\s*\u0905\u0902\u0915|\u092a\u0942\u0930\u094d\u0923\u093e\u0902\u0915|\u0938\u0924\u094d\u0930)\s*[:\-\u2013]/gi;
+function readHeader(lines, info){
+  var rest = [], inInstr = false;
+  lines.forEach(function(line){
+    var t = line.trim();
+    if(!t) return;
+    if(/p\.?\s*p\.?\s*international|international\s+school|dream[.,]?\s*achieve|^(?:affiliat|school\s+code|pitampura)/i.test(t)) return;
+    if(/^(?:name|roll\s*no|date|\u0928\u093e\u092e|\u0905\u0928\u0941\u0915\u094d\u0930\u092e\u093e\u0902\u0915)\b.{0,6}[:_.\-]/i.test(t) ||
+       /^[_.\s]*$/.test(t)) { inInstr = false; return; }
+    if(/^(?:general\s+)?instructions?\b|^\u0938\u093e\u092e\u093e\u0928\u094d\u092f\s+\u0928\u093f\u0930\u094d\u0926\u0947\u0936|^\u0928\u093f\u0930\u094d\u0926\u0947\u0936/i.test(t)){
+      inInstr = true;
+      var after = t.replace(/^(?:general\s+)?instructions?\s*[:\-\u2013]?\s*|^[^:\-\u2013]*[:\-\u2013]\s*/i, '');
+      if(after && after !== t) info.instr.push(after);
+      return;
+    }
+    if(inInstr){ info.instr.push(t.replace(/^(?:\(?\d{1,2}[.)]|\(?[ivx]+[.)]|[\u2022\-\u2013*\u25cf\u25aa])\s*/i, '')); return; }
+    var chunks = t.replace(HEAD_KEYS, '\t$&').split(/\t|\s{3,}|\s[|\u00b7\u2022]\s/).map(function(c){ return c.trim(); }).filter(Boolean);
+    var left = [];
+    chunks.forEach(function(c){
+      var m;
+      if((m = c.match(/^(?:academic\s+)?session\s*[:\-\u2013]?\s*(.+)$|^\u0938\u0924\u094d\u0930\s*[:\-\u2013]?\s*(.+)$/i))) info.session = (m[1] || m[2]).trim();
+      else if((m = c.match(/^(?:max(?:imum)?\.?\s*marks?|m\.\s*m\.?|total\s+marks|\u0905\u0927\u093f\u0915\u0924\u092e\s*\u0905\u0902\u0915|\u092a\u0942\u0930\u094d\u0923\u093e\u0902\u0915)\s*[:\-\u2013]?\s*(\d+(?:\.\d+)?)/i))) info.max = m[1];
+      else if((m = c.match(/^(?:time\s+allowed|time|duration|\u0938\u092e\u092f)\s*[:\-\u2013]?\s*(.+)$/i))) info.duration = m[1].trim();
+      else if((m = c.match(/^(?:subject|\u0935\u093f\u0937\u092f)\s*[:\-\u2013]?\s*(.+)$/i))) info.subject = m[1].trim();
+      else if((m = c.match(/^(?:class|grade|\u0915\u0915\u094d\u0937\u093e)\s*[:\-\u2013]?\s*(.+)$/i))) info.grade = m[1].trim();
+      else left.push(c);
+    });
+    if(!left.length) return;
+    var l = left.join(' ');
+    var yr = l.match(/\(?\b(20\d\d\s*[-\u2013]\s*\d{2,4})\b\)?/);
+    if(yr && !info.session){ info.session = yr[1].replace(/\s+/g, ''); l = l.replace(yr[0], '').replace(/[\s\-\u2013:]+$/, '').trim(); }
+    if(!l) return;
+    if(info.title && /assessment|term|periodic|round|unit|\u092a\u0930\u0940\u0915\u094d\u0937\u093e/i.test(l) && wordCount(l) <= 6) info.title += ' \u2013 ' + l;
+    else if(!info.title && /worksheet|test|exam|assessment|appraisal|periodic|term|half|annual|unit|quiz|paper|revision|\u0915\u093e\u0930\u094d\u092f\u092a\u0924\u094d\u0930\u0915|\u092a\u0930\u0940\u0915\u094d\u0937\u093e|\u0905\u092d\u094d\u092f\u093e\u0938/i.test(l)) info.title = l;
+    else rest.push(l);
+  });
+  return rest;
+}
+
+/* a table: question rows, a match-the-columns table, a help box, or plain rows */
+var LABEL_CELL = /^\(?(?:Q\.?\s*)?(?:\d{1,2}|[a-hA-H]|[ivx]{1,4}|[\u0915-\u0939])\s*[.):]?\)?$/i;
+function tableLines(rows, hi, prev){
+  var out = [], txt = function(c){ return c.join(' ').replace(/\s+/g, ' ').trim(); };
+  rows = rows.filter(function(r){ return r.some(function(c){ return txt(c); }); });
+  if(!rows.length) return out;
+  /* a heading such as SECTION C | (31 Marks) laid out in a table */
+  var one = rows.length === 1 ? tidyLine(rows[0].map(txt).filter(Boolean).join(' '), hi) : '';
+  if(one && SEC_RE.test(one)) return [one];
+  /* a row whose question sits in a later cell, e.g. picture | 18. question */
+  var later = rows.filter(function(r){ return r.slice(1).some(function(c){ return NUM_RE.test(tidyLine(txt(c), hi)); }); });
+  if(later.length >= Math.max(1, rows.length * 0.6)){
+    rows.forEach(function(r){
+      var cells = r.map(txt), at = -1;
+      cells.some(function(c, i){ if(i && NUM_RE.test(tidyLine(c, hi))){ at = i; return true; } return false; });
+      if(at < 0){ var l = cells.filter(Boolean).join(' | '); if(l) out.push(tidyLine(l, hi)); return; }
+      out.push(tidyLine(cells[at], hi));
+      var rest = cells.filter(function(c, i){ return i !== at && c; }).join(' | ');
+      if(rest) out.push(rest);
+    });
+    return out;
+  }
+  var head = rows[0].map(txt);
+  var isHead = /q\.?\s*no|s\.?\s*no|question|marks|\u092a\u094d\u0930\u0936\u094d\u0928|\u0905\u0902\u0915/i.test(head.join(' ')) &&
+               !LABEL_CELL.test(head[0] || '');
+  var body = isHead ? rows.slice(1) : rows;
+  var qRows = body.filter(function(r){ return r.length >= 2 && LABEL_CELL.test(txt(r[0])) && txt(r[0]); });
+  if(body.length && qRows.length >= Math.max(1, body.length * 0.6)){
+    body.forEach(function(r){
+      var lab = txt(r[0]).replace(/^\(|\)$/g, '').replace(/[.):]$/, '');
+      var last = r.length > 2 ? txt(r[r.length - 1]) : '';
+      var marks = /^[\[(]?\d+(?:\.\d+)?(?:\s*[x\u00d7*]\s*\d+(?:\.\d+)?)?(?:\s*=\s*\d+(?:\.\d+)?)?\s*(?:marks?|m)?[\])]?$/i.test(last) ? last : '';
+      var mid = r.slice(1, marks ? r.length - 1 : r.length);
+      var lines = [].concat.apply([], mid).map(function(l){ return l.trim(); }).filter(Boolean);
+      var first = lines.shift() || '';
+      if(/^\d+$/.test(lab.replace(/^Q\.?\s*/i, ''))) lab = (hi ? '\u092a\u094d\u0930' : 'Q') + lab.replace(/^Q\.?\s*/i, '');
+      var m = marks ? ' (' + marks.replace(/[\[\]()\s]|marks?|m$/gi, '') + ')' : '';
+      out.push(tidyLine(lab + '. ' + first + m, hi));
+      lines.forEach(function(l){ out.push(tidyLine(l, hi)); });
+    });
+    return out;
+  }
+  /* label-only columns (a. / i.) are dropped: the maker prints its own */
+  var keep = rows[0].map(function(_, i){
+    return !rows.every(function(r){ return !txt(r[i] || []) || LABEL_CELL.test(txt(r[i] || [])); });
+  });
+  var cut = rows.map(function(r){ return r.filter(function(_, i){ return keep[i]; }).map(txt); });
+  var width = Math.max.apply(null, cut.map(function(r){ return r.length; }));
+  if(rows.length === 1 || width === 1){
+    var cellsOut = [].concat.apply([], cut).filter(Boolean);
+    if(cellsOut.length && cellsOut.every(function(c){ return wordCount(c) <= 4; })){
+      out.push('BOX: ' + cellsOut.join(' | '));
+      return out;
+    }
+  }
+  var asksMatch = /match|\u092e\u093f\u0932\u093e\u0928|\u0938\u0941\u092e\u0947\u0932/i.test(prev || '') ||
+                  /column|\u0938\u094d\u0924\u0902\u092d/i.test(cut[0].join(' '));
+  if(width === 2 && rows.length >= 3 && asksMatch){
+    var h = cut[0], plainHead = !/\d/.test(h.join('')) && h.every(function(c){ return wordCount(c) <= 4; }) &&
+            (/column|match|\u0938\u094d\u0924\u0902\u092d/i.test(h.join(' ')) || /[A-Z]{3}/.test(h.join(' ')));
+    out.push('MATCH: ' + (plainHead ? h.join(' | ') : 'Column A | Column B'));
+    (plainHead ? cut.slice(1) : cut).forEach(function(r){ out.push(r.join(' | ')); });
+    return out;
+  }
+  /* any other table (survey figures, data) keeps its rows as written */
+  rows.forEach(function(r){ var l = r.map(txt).filter(Boolean).join(' | '); if(l) out.push(l); });
+  return out;
+}
+
+function importDocx(file){
+  var note = el('docxnote');
+  note.className = 'hint'; note.textContent = 'Reading ' + file.name + ' \u2026';
+  if(/\.doc$/i.test(file.name)){
+    note.className = 'hint bad';
+    note.textContent = 'This is an old Word file (.doc). Open it in Word, choose File \u2192 Save As \u2192 Word Document (.docx), then upload that.';
+    return Promise.resolve();
+  }
+  return file.arrayBuffer().then(function(buf){
+    var files = unzip(buf);
+    if(!files || !files['word/document.xml']) throw new Error('notdocx');
+    return Promise.all([zipXml(files, 'word/document.xml'), zipXml(files, 'word/numbering.xml'),
+                        zipXml(files, 'word/styles.xml'), zipXml(files, 'word/_rels/document.xml.rels')])
+      .then(function(x){ return buildFromDocx(files, x[0], x[1], x[2], x[3], file.name); });
+  }).catch(function(e){
+    note.className = 'hint bad';
+    note.textContent = e && e.message === 'empty'
+      ? 'No questions were found in ' + file.name + ', so the paper on the page was left as it was.'
+      : e && e.message === 'notdocx'
+      ? file.name + ' is not a Word (.docx) file. In Word, choose File \u2192 Save As \u2192 Word Document (.docx), then upload that.'
+      : 'Could not read ' + file.name + ' (' + (e && e.message || e) + ').';
+  });
+}
+
+function buildFromDocx(files, doc, numDoc, styleDoc, rels, fname){
+  var num = new Numbering(numDoc, styleDoc), rel = {};
+  if(rels) Array.prototype.forEach.call(rels.getElementsByTagName('Relationship'), function(r){
+    rel[r.getAttribute('Id')] = r.getAttribute('Target');
+  });
+  var body = doc.getElementsByTagNameNS(WNS, 'body')[0];
+  var all = (body.textContent || '');
+  var hi = (all.match(/[\u0900-\u097f]/g) || []).length > (all.match(/[A-Za-z]/g) || []).length;
+
+  /* blocks in reading order: { lines:[...], pics:[...] } */
+  var blocks = [];
+  function para(p){
+    var c = paraContent(p), lab = num.label(wkid(p, 'pPr'));
+    var text = c.s;
+    if(lab && text.trim()) text = lab + (/\s$/.test(lab) ? '' : ' ') + text.replace(/^\s+/, '');
+    blocks.push({ kind:'p', lines:text.split('\n'), pics:c.pics });
+  }
+  function table(tb){
+    var rows = wkids(tb, 'tr').map(function(tr){
+      return wkids(tr, 'tc').map(function(tc){
+        var ls = [];
+        wkids(tc, 'p').forEach(function(p){ var c = paraContent(p), lab = num.label(wkid(p, 'pPr'));
+          ls.push((lab && c.s.trim() ? lab + ' ' : '') + c.s.replace(/\t/g, '   ')); });
+        wkids(tc, 'tbl').forEach(function(inner){ ls.push(inner.textContent); });
+        return ls;
+      });
+    });
+    var pics = [];
+    Array.prototype.forEach.call(tb.getElementsByTagNameNS(WNS, 'p'), function(p){ pics = pics.concat(paraContent(p).pics); });
+    blocks.push({ kind:'t', rows:rows, pics:pics });
+  }
+  (function walk(n){
+    Array.prototype.forEach.call(n.childNodes, function(c){
+      if(c.localName === 'p') para(c);
+      else if(c.localName === 'tbl') table(c);
+      else if(c.localName === 'sdt' || c.localName === 'sdtContent' || c.localName === 'customXml') walk(c);
+    });
+  })(body);
+
+  /* everything above the first section heading or question is the header */
+  var info = { instr:[], session:'', title:'', grade:'', subject:'', duration:'', max:'' };
+  /* numbered lines under "General Instructions" are instructions, until a
+     section, a Q-numbered or marked line, or the numbering starting again */
+  var instrMode = false, instrLast = 0;
+  var startsBody = function(raw){
+    var t = tidyLine(raw, hi);
+    if(/^(?:general\s+)?instructions?\b|^\u0938\u093e\u092e\u093e\u0928\u094d\u092f\s+\u0928\u093f\u0930\u094d\u0926\u0947\u0936|^\u0928\u093f\u0930\u094d\u0926\u0947\u0936/i.test(t)){ instrMode = true; return false; }
+    if(SEC_RE.test(t)) return true;
+    var m = t.match(NUM_RE);
+    if(!m) return false;
+    if(instrMode && !/^\s*(?:Q|\u092a\u094d\u0930)/i.test(raw) && !MARK_RE.test(t) &&
+       parseInt(m[1], 10) === instrLast + 1){ instrLast++; return false; }
+    return true;
+  };
+  var headLines = [], bi = 0;
+  for(; bi < blocks.length; bi++){
+    var bk = blocks[bi];
+    if(bk.kind === 't'){
+      var flat = bk.rows.map(function(r){ return r.map(function(c){ return c.join(' '); }).join('\t'); });
+      if(flat.some(startsBody)) break;
+      headLines = headLines.concat(flat); continue;
+    }
+    var at = -1;
+    bk.lines.some(function(l, i){ if(startsBody(l)){ at = i; return true; } return false; });
+    if(at >= 0){ headLines = headLines.concat(bk.lines.slice(0, at)); bk.lines = bk.lines.slice(at); break; }
+    headLines = headLines.concat(bk.lines);
+  }
+  var lead = readHeader(headLines, info);
+
+  var out = lead.map(function(l){ return tidyLine(l, hi); }), pics = [], ruled = 0;
+  function flushRuled(){ if(ruled){ out.push('LINES: ' + ruled); ruled = 0; } }
+  function addPic(pc){
+    var target = rel[pc.rid];
+    if(!target) return;
+    var path = target.replace(/^\//, '').replace(/^(?!word\/)/, 'word/').replace(/\/[^\/]+\/\.\.\//g, '/');
+    pics.push({ path:path, name:target.split('/').pop() });
+    out.push('PIC:' + (pc.h ? ' ' + Math.max(15, Math.min(120, pc.h)) : ''));
+  }
+  blocks.slice(bi).forEach(function(bk){
+    if(bk.kind === 't'){
+      flushRuled();
+      var prev = out.filter(function(l){ return l.trim(); }).pop() || '';
+      tableLines(bk.rows, hi, prev).forEach(function(l){ out.push(l); });
+      bk.pics.forEach(addPic);
+      return;
+    }
+    bk.lines.forEach(function(raw){
+      var t = raw.replace(/\s+/g, '');
+      if(t.length >= 10 && /^[_.\u2026\-]+$/.test(t)){ ruled++; return; }
+      flushRuled();
+      var l = tidyLine(raw, hi);
+      if(!l){ if(!bk.pics.length && out.length && out[out.length - 1] !== '') out.push(''); return; }
+      out.push(l);
+    });
+    if(bk.pics.length){ flushRuled(); bk.pics.forEach(addPic); }
+  });
+  flushRuled();
+  while(out.length && !out[out.length - 1]) out.pop();
+  while(out.length && !out[0]) out.shift();
+  /* a long numbered paragraph with no marks is a paragraph of a passage, not a question */
+  out = out.map(function(l){
+    var m = l.match(/^(\d{1,2})\. (.*)$/);
+    return m && !MARK_RE.test(l) && wordCount(m[2]) > 30 ? '(' + m[1] + ') ' + m[2] : l;
+  });
+  /* one numbering style for the whole paper */
+  var Q = hi ? '\u092a\u094d\u0930' : 'Q';
+  if(out.some(function(l){ return new RegExp('^' + Q + '\\d').test(l); }))
+    out = out.map(function(l){ return l.replace(/^(\d{1,2})\. (?=\S)/, Q + '$1. '); });
+
+  if(!out.some(function(l){ return l.trim(); })) throw new Error('empty');
+  var MIME = { png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', bmp:'image/bmp', webp:'image/webp' };
+  return Promise.all(pics.map(function(p){
+    var ext = (p.name.split('.').pop() || '').toLowerCase();
+    if(!MIME[ext]) return Promise.resolve(null);
+    return zipBytes(files, p.path).then(function(b){
+      if(!b) return null;
+      return readPicture(new File([b], p.name, { type:MIME[ext] }));
+    });
+  })).then(function(srcs){
+    el('lang').value = hi ? 'hi' : 'en';
+    el('body').value = out.join('\n');
+    el('title').value = info.title; el('grade').value = info.grade.replace(/^[:\-\s]+/, '');
+    el('subject').value = info.subject; el('duration').value = info.duration;
+    if(info.session) el('session').value = info.session;
+    el('instr').value = info.instr.filter(Boolean).join('\n');
+    PICS.length = 0; PICNAMES.length = 0; PICBAD = [];
+    srcs.forEach(function(s, i){
+      if(s){ PICS.push(s); PICNAMES.push(pics[i].name); }
+      else { PICS.push(''); PICNAMES.push(pics[i].name); }
+    });
+    var items = parse(el('body').value);
+    el('max').value = info.max || String(effectiveMarks(items).reduce(function(a, m){ return a + m; }, 0) || '');
+    save(); languageChanged(); showPics(); check(); refreshPdfName();
+    var qs = items.filter(function(i){ return i.kind === 'q'; }).length;
+    var note = el('docxnote');
+    note.className = 'hint ok';
+    var empty = PICS.filter(function(s){ return !s; }).length;
+    note.innerHTML = '<b>Read ' + esc(fname) + ':</b> ' + qs + ' question' + (qs === 1 ? '' : 's') +
+      (PICS.length ? ', ' + PICS.length + ' picture' + (PICS.length === 1 ? '' : 's') : '') +
+      '. It is laid out below in the school format and checked (box 4). Look over the preview, then press ' +
+      '<b>Save the PDF on this computer</b>.' +
+      (empty ? '<br><span class="bad">' + empty + ' picture' + (empty === 1 ? ' is' : 's are') +
+       ' in a format a browser cannot show, so ' + (empty === 1 ? 'its frame is' : 'their frames are') +
+       ' empty. Save each as a JPG or PNG (or take a screenshot) and choose it under the paper, or press Ctrl+V: ' +
+       'it fills the first empty frame.</span>' : '');
+    if(el('docxpdf').checked && !empty) whenPicturesReady(function(){ el('savepdf').click(); });
+  });
+}
+function whenPicturesReady(done){
+  var imgs = Array.prototype.slice.call(el('sheet').querySelectorAll('img'));
+  Promise.all(imgs.map(function(i){ return i.decode ? i.decode().catch(function(){}) : null; }))
+    .then(function(){ setTimeout(done, 150); });
+}
+el('docxfile').addEventListener('change', function(){
+  var f = this.files && this.files[0]; this.value = '';
+  if(f) importDocx(f);
 });
 
 if(!load()) el('body').value = SAMPLE;   /* a cleared paper stays cleared */

@@ -8,9 +8,12 @@ Live: https://alishakanwar-crypto.github.io/ppis-question-papers/
 The paper stays on the teacher own computer; nothing is uploaded.
 
 A paper already typed in Word can be used too: under **2 Questions**, choose the `.docx` file.
-The page reads it in the browser, moves the title, class, subject, time, marks and instructions
-into box 1, rewrites the questions in the maker's own lines (`Q1.`, `a.`, `(a) … (b) …`,
-`MATCH:`, `BOX:`, `TABLE:`, `FRAME:`, `LINES:`, `PIC:`) with the Word pictures, checks it and opens the
-Save-as-PDF window. Nothing in the paper is left out: Word tables print as ruled tables with every row
-and cell (empty ones too), bordered paragraphs, one-cell tables, text boxes and drawn boxes print as
-boxes, and every picture (several in a row, or a picture between the header and Q1) is kept. Old `.doc` files must first be saved as `.docx` in Word.
+The page reads it in the browser, checks it and opens the Save-as-PDF window. With **Keep my Word
+layout** ticked (the default) the paper prints as it was laid out in Word: every box, table, text
+box, drawn box and picture stays where the teacher put it; only the school logo, the page border and
+the school font are added (Word's own letterhead logo is left out). Text boxes and shapes become boxes
+of the same size just under their line. Unticked, the questions are rewritten in the maker's own
+lines (`Q1.`, `a.`, `(a) … (b) …`, `MATCH:`, `BOX:`, `TABLE:`, `FRAME:`, `LINES:`, `PIC:`) and laid
+out in the maker's format; editing box 2 after an upload also switches to that layout. The Word
+layout is drawn with [docx-preview](https://github.com/VolodymyrBaydalka/docxjs) 0.3.6 (Apache-2.0)
+and [JSZip](https://stuk.github.io/jszip/) 3.10.1 (MIT), kept in `vendor/`. Old `.doc` files must first be saved as `.docx` in Word.

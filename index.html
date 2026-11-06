@@ -1133,8 +1133,8 @@ function picLines(){ return parse(el('body').value).filter(function(it){ return 
 function showPics(){
   var h = '';
   PICS.forEach(function(src, i){
-    h += '<span class="pic"><img src="' + src + '" alt=""><span><b>' + (i + 1) + '.</b> ' +
-         esc(PICNAMES[i] || '') + '</span><button type="button" data-i="' + i +
+    h += '<span class="pic">' + (src ? '<img src="' + src + '" alt="">' : '') + '<span><b>' + (i + 1) + '.</b> ' +
+         esc(PICNAMES[i] || '') + (src ? '' : ' \u2014 <span class="bad">empty: choose a JPG/PNG to fill it</span>') + '</span><button type="button" data-i="' + i +
          '" title="Remove">\u00d7</button></span>';
   });
   if(PICBAD.length)
@@ -1173,7 +1173,10 @@ function addPics(files){
     PICBAD = [];
     results.forEach(function(src, i){
       var name = files[i].name || 'pasted picture';
-      if(src){ PICS.push(src); PICNAMES.push(name); } else PICBAD.push(name);
+      if(src){
+        var gap = PICS.indexOf('');
+        if(gap >= 0){ PICS[gap] = src; PICNAMES[gap] = name; } else { PICS.push(src); PICNAMES.push(name); }
+      } else PICBAD.push(name);
     });
     showPics(); render();
   });
@@ -1447,10 +1450,26 @@ function readHeader(lines, info){
 
 /* a table: question rows, a match-the-columns table, a help box, or plain rows */
 var LABEL_CELL = /^\(?(?:Q\.?\s*)?(?:\d{1,2}|[a-hA-H]|[ivx]{1,4}|[\u0915-\u0939])\s*[.):]?\)?$/i;
-function tableLines(rows, hi){
+function tableLines(rows, hi, prev){
   var out = [], txt = function(c){ return c.join(' ').replace(/\s+/g, ' ').trim(); };
   rows = rows.filter(function(r){ return r.some(function(c){ return txt(c); }); });
   if(!rows.length) return out;
+  /* a heading such as SECTION C | (31 Marks) laid out in a table */
+  var one = rows.length === 1 ? tidyLine(rows[0].map(txt).filter(Boolean).join(' '), hi) : '';
+  if(one && SEC_RE.test(one)) return [one];
+  /* a row whose question sits in a later cell, e.g. picture | 18. question */
+  var later = rows.filter(function(r){ return r.slice(1).some(function(c){ return NUM_RE.test(tidyLine(txt(c), hi)); }); });
+  if(later.length >= Math.max(1, rows.length * 0.6)){
+    rows.forEach(function(r){
+      var cells = r.map(txt), at = -1;
+      cells.some(function(c, i){ if(i && NUM_RE.test(tidyLine(c, hi))){ at = i; return true; } return false; });
+      if(at < 0){ var l = cells.filter(Boolean).join(' | '); if(l) out.push(tidyLine(l, hi)); return; }
+      out.push(tidyLine(cells[at], hi));
+      var rest = cells.filter(function(c, i){ return i !== at && c; }).join(' | ');
+      if(rest) out.push(rest);
+    });
+    return out;
+  }
   var head = rows[0].map(txt);
   var isHead = /q\.?\s*no|s\.?\s*no|question|marks|\u092a\u094d\u0930\u0936\u094d\u0928|\u0905\u0902\u0915/i.test(head.join(' ')) &&
                !LABEL_CELL.test(head[0] || '');
@@ -1484,14 +1503,17 @@ function tableLines(rows, hi){
       return out;
     }
   }
-  if(width === 2 && rows.length >= 3){
+  var asksMatch = /match|\u092e\u093f\u0932\u093e\u0928|\u0938\u0941\u092e\u0947\u0932/i.test(prev || '') ||
+                  /column|\u0938\u094d\u0924\u0902\u092d/i.test(cut[0].join(' '));
+  if(width === 2 && rows.length >= 3 && asksMatch){
     var h = cut[0], plainHead = !/\d/.test(h.join('')) && h.every(function(c){ return wordCount(c) <= 4; }) &&
             (/column|match|\u0938\u094d\u0924\u0902\u092d/i.test(h.join(' ')) || /[A-Z]{3}/.test(h.join(' ')));
     out.push('MATCH: ' + (plainHead ? h.join(' | ') : 'Column A | Column B'));
     (plainHead ? cut.slice(1) : cut).forEach(function(r){ out.push(r.join(' | ')); });
     return out;
   }
-  cut.forEach(function(r){ var l = r.filter(Boolean).join('   '); if(l) out.push(tidyLine(l, hi)); });
+  /* any other table (survey figures, data) keeps its rows as written */
+  rows.forEach(function(r){ var l = r.map(txt).filter(Boolean).join(' | '); if(l) out.push(l); });
   return out;
 }
 
@@ -1511,7 +1533,9 @@ function importDocx(file){
       .then(function(x){ return buildFromDocx(files, x[0], x[1], x[2], x[3], file.name); });
   }).catch(function(e){
     note.className = 'hint bad';
-    note.textContent = e && e.message === 'notdocx'
+    note.textContent = e && e.message === 'empty'
+      ? 'No questions were found in ' + file.name + ', so the paper on the page was left as it was.'
+      : e && e.message === 'notdocx'
       ? file.name + ' is not a Word (.docx) file. In Word, choose File \u2192 Save As \u2192 Word Document (.docx), then upload that.'
       : 'Could not read ' + file.name + ' (' + (e && e.message || e) + ').';
   });
@@ -1598,7 +1622,8 @@ function buildFromDocx(files, doc, numDoc, styleDoc, rels, fname){
   blocks.slice(bi).forEach(function(bk){
     if(bk.kind === 't'){
       flushRuled();
-      tableLines(bk.rows, hi).forEach(function(l){ out.push(l); });
+      var prev = out.filter(function(l){ return l.trim(); }).pop() || '';
+      tableLines(bk.rows, hi, prev).forEach(function(l){ out.push(l); });
       bk.pics.forEach(addPic);
       return;
     }
@@ -1625,6 +1650,7 @@ function buildFromDocx(files, doc, numDoc, styleDoc, rels, fname){
   if(out.some(function(l){ return new RegExp('^' + Q + '\\d').test(l); }))
     out = out.map(function(l){ return l.replace(/^(\d{1,2})\. (?=\S)/, Q + '$1. '); });
 
+  if(!out.some(function(l){ return l.trim(); })) throw new Error('empty');
   var MIME = { png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', bmp:'image/bmp', webp:'image/webp' };
   return Promise.all(pics.map(function(p){
     var ext = (p.name.split('.').pop() || '').toLowerCase();
@@ -1643,7 +1669,7 @@ function buildFromDocx(files, doc, numDoc, styleDoc, rels, fname){
     PICS.length = 0; PICNAMES.length = 0; PICBAD = [];
     srcs.forEach(function(s, i){
       if(s){ PICS.push(s); PICNAMES.push(pics[i].name); }
-      else { PICS.push(''); PICNAMES.push(pics[i].name); PICBAD.push(pics[i].name); }
+      else { PICS.push(''); PICNAMES.push(pics[i].name); }
     });
     var items = parse(el('body').value);
     el('max').value = info.max || String(effectiveMarks(items).reduce(function(a, m){ return a + m; }, 0) || '');
@@ -1651,13 +1677,16 @@ function buildFromDocx(files, doc, numDoc, styleDoc, rels, fname){
     var qs = items.filter(function(i){ return i.kind === 'q'; }).length;
     var note = el('docxnote');
     note.className = 'hint ok';
+    var empty = PICS.filter(function(s){ return !s; }).length;
     note.innerHTML = '<b>Read ' + esc(fname) + ':</b> ' + qs + ' question' + (qs === 1 ? '' : 's') +
       (PICS.length ? ', ' + PICS.length + ' picture' + (PICS.length === 1 ? '' : 's') : '') +
       '. It is laid out below in the school format and checked (box 4). Look over the preview, then press ' +
       '<b>Save the PDF on this computer</b>.' +
-      (PICBAD.length ? '<br><span class="bad">Some pictures are in a format a browser cannot show (' + esc(PICBAD.join(', ')) +
-       '); their frames are left empty. Copy each one and press Ctrl+V here, or choose it as a JPG/PNG below.</span>' : '');
-    if(el('docxpdf').checked) whenPicturesReady(function(){ el('savepdf').click(); });
+      (empty ? '<br><span class="bad">' + empty + ' picture' + (empty === 1 ? ' is' : 's are') +
+       ' in a format a browser cannot show, so ' + (empty === 1 ? 'its frame is' : 'their frames are') +
+       ' empty. Save each as a JPG or PNG (or take a screenshot) and choose it under the paper, or press Ctrl+V: ' +
+       'it fills the first empty frame.</span>' : '');
+    if(el('docxpdf').checked && !empty) whenPicturesReady(function(){ el('savepdf').click(); });
   });
 }
 function whenPicturesReady(done){

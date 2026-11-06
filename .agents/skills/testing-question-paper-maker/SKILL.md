@@ -271,6 +271,13 @@ pictures and, if `#docxpdf` is ticked, clicks `#savepdf`. Status goes to `#docxn
   logo as a picture: it must be dropped, not become `PIC:` line 1. Long numbered passage paragraphs
   (>30 words, no marks) become `(1) …` so they are not printed as questions.
 - An old `.doc` (OLE file) must show the "Save As .docx" message, never throw.
+- A valid but empty `.docx` must leave the current paper, fields and `PICS` alone and not print.
+- Tables: only a table after a "match" line (or with a `Column` header) becomes `MATCH:`; data tables
+  (e.g. the Mid-Term "Reason | Percentage" survey) stay as `a | b` rows; a one-row
+  `SECTION C … | (31 Marks)` table becomes a section heading; `picture | 18. question` rows become
+  the question line then the picture cell.
+- An unsupported Word picture (e.g. `.emf`) leaves `PICS[i] = ''` with an "empty" chip; choosing a
+  PNG afterwards must fill that slot (`PICS.indexOf('')`), not append, and auto-print is skipped.
 
 ## Devin Secrets Needed
 

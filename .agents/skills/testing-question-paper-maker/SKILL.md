@@ -272,8 +272,16 @@ pictures and, if `#docxpdf` is ticked, clicks `#savepdf`. Status goes to `#docxn
   (>30 words, no marks) become `(1) …` so they are not printed as questions.
 - An old `.doc` (OLE file) must show the "Save As .docx" message, never throw.
 - A valid but empty `.docx` must leave the current paper, fields and `PICS` alone and not print.
-- Tables: only a table after a "match" line (or with a `Column` header) becomes `MATCH:`; data tables
-  (e.g. the Mid-Term "Reason | Percentage" survey) stay as `a | b` rows; a one-row
+- Content must never be dropped (the teacher's rule: "do formatting and alignment, not remove the
+  contents including boxes or images"). Fixture `~/wordimp2/mk.py` builds a paper with a bordered
+  passage, a S.No./Animal/Home table with empty cells, a one-cell notice table, an empty drawn
+  rectangle, a bordered text box, two pictures in one paragraph and a picture before Q1; every one
+  must show in the PDF.
+- Tables: only a table after a "match" line (or with a `Column` header) becomes `MATCH:`; a table
+  of questions (header with Q. No/Question/Marks, or 5+ words a row) becomes question lines; any
+  other table becomes `TABLE: head | head` + `a | b` rows, printed ruled (`table.grid`) with short
+  columns narrow; bordered paragraphs, one-cell tables and outlined text boxes/rectangles become
+  `FRAME:` … `END FRAME` (`.tbox`; never class `frame`, that is the fixed page border); a one-row
   `SECTION C … | (31 Marks)` table becomes a section heading; `picture | 18. question` rows become
   the question line then the picture cell.
 - An unsupported Word picture (e.g. `.emf`) leaves `PICS[i] = ''` with an "empty" chip; choosing a

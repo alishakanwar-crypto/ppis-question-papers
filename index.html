@@ -125,6 +125,12 @@
   table.match td.lbl{width:8mm;padding:1.2mm 1mm;text-align:center}
   table.match td.ans{width:20mm;text-align:center}
   table.match tr.h td{font-weight:bold}
+  table.grid{border-collapse:collapse;width:100%;margin:2mm 0;table-layout:fixed}
+  table.grid.auto{width:auto;min-width:50%;table-layout:auto}
+  table.grid td{border:1px solid #000;padding:1.2mm 2mm;text-align:left;vertical-align:top;height:6mm}
+  table.grid tr.h td{font-weight:bold}
+  .tbox{border:1px solid #000;padding:2mm 3mm;margin:2mm 0}
+  .tbox .bl{margin:.6mm 0;text-align:justify}
   .ansline{border-bottom:1px solid #000;height:9.5mm;margin:0 2mm}
   .blank{display:inline-block;border-bottom:1px solid #000;min-width:30mm}
   /* a blank at the end of the line is written on, so it stands at its own stop
@@ -204,6 +210,8 @@ Write the answers in the space provided.</textarea></div>
         marks at the end of the line: <code>(1)</code>, <code>(3x1=3)</code>, <code>(4x0.5=2)</code> or <code>[2]</code><br>
         <code>BOX: baskets | shopkeeper | money</code> a help box ·
         <code>MATCH: MASCULINE | FEMININE</code> then <code>uncle | niece</code> on each following line ·
+        <code>TABLE: Reason | Percentage</code> then <code>Lower prices | 32%</code> on each following line, a ruled table ·
+        <code>FRAME:</code> the lines below it, up to <code>END FRAME</code>, inside a box (<code>FRAME: 30</code> alone, an empty 30 mm box) ·
         <code>LINES: 4</code> four ruled answer lines · <code>PIC:</code> a picture (write <code>PIC: 50</code> for a taller one;
         a <code>PIC:</code> straight after a <code>BOX:</code> prints beside it) ·
         <code>____</code> a blank to fill · a blank line leaves a gap.</p>
@@ -337,6 +345,9 @@ var ROMAN    = '(?:i{1,3}|iv|v|vi{1,3}|vi|ix|x)';
 var OPT_ONE  = new RegExp('(?:^|\\s)(?:\\(?' + ROMAN + '\\)?[.)]|\\([a-h]\\))\\s', 'gi');
 var OPT_RE   = new RegExp('^(?:\\(?' + ROMAN + '\\)?[.)]|\\([a-h]\\))\\s', 'i');
 var BOX_RE   = /^\s*BOX\s*:\s*(.+)$/i;
+var TABLE_RE = /^\s*TABLE\s*:\s*(.*)$/;
+var FRAME_RE = /^\s*FRAME\s*:?\s*(\d+)?\s*$/;
+var END_RE   = /^\s*END(?:\s+FRAME)?\s*$/;
 var MATCH_RE = /^\s*MATCH\s*:\s*(.+)$/i;
 var LINES_RE = /^\s*LINES\s*:?\s*(\d+)\s*$/i;
 var PIC_RE   = /^\s*(?:PIC|PICTURE)\s*:?\s*(\d+)?\s*$/i;
@@ -396,6 +407,29 @@ function parse(src){
         i++; rows.push(cells(lines[i].trim()));
       }
       out.push({ kind:'match', head:cells(mt[1]), rows:rows, text:t, marks:null, line:at, raw:raw });
+      continue;
+    }
+    var tb = t.match(TABLE_RE);
+    if(tb){
+      var trows = [], tin = [], tat = i + 1;
+      while(i + 1 < lines.length && lines[i+1].trim() && lines[i+1].indexOf('|') > -1){
+        i++; trows.push(cells(lines[i].trim().replace(/\s*\|\s*$/, '')));
+        tin.push({ kind:'plain', text:lines[i].trim(), marks:null, line:i+1, raw:lines[i] });
+      }
+      out.push({ kind:'table', head:tb[1].trim() ? cells(tb[1]) : [], rows:trows, inner:tin,
+                 text:t, marks:null, line:tat, raw:raw });
+      continue;
+    }
+    var fr = t.match(FRAME_RE);
+    if(fr){
+      /* the lines up to END FRAME (or the next empty line) print inside a ruled box */
+      var fin = [], fat = i + 1;
+      while(i + 1 < lines.length && lines[i+1].trim() && !END_RE.test(lines[i+1])){
+        i++; fin.push({ kind:'plain', text:lines[i].trim(), marks:null, line:i+1, raw:lines[i] });
+      }
+      if(i + 1 < lines.length && END_RE.test(lines[i+1])) i++;
+      out.push({ kind:'frame', h:fr[1] ? Math.max(8, Math.min(240, parseInt(fr[1], 10))) : 0, inner:fin,
+                 text:t, marks:null, line:fat, raw:raw });
       continue;
     }
     var bx = t.match(BOX_RE);
@@ -514,6 +548,12 @@ function itemHtml(it, qpre){
     it.cells.forEach(function(c){ h += '<tr><td>' + esc(c) + '</td></tr>'; });
     return h + '</table>';
   }
+  if(it.kind === 'table') return tableHtml(it);
+  if(it.kind === 'frame'){
+    h = '<div class="tbox"' + (it.h ? ' style="min-height:' + it.h + 'mm"' : '') + '>';
+    it.inner.forEach(function(l){ h += '<div class="bl">' + withBlanks(l.text) + '</div>'; });
+    return h + '</div>';
+  }
   if(it.kind === 'boxpic')
     return '<div class="boxpic">' + itemHtml(it.box, qpre) +
            '<div class="pic" style="height:' + it.pic.h + 'mm">' + picHtml(it.pic.idx) +
@@ -551,6 +591,32 @@ function itemHtml(it, qpre){
          (m ? '<span class="m" style="float:right">' + m + '</span>' : '') + '</div>';
 }
 
+/* a table from the paper, ruled like the original; a column of short values
+   (S. No., marks, figures) is kept narrow and the wordy columns take the rest */
+function tableHtml(it){
+  var all = (it.head.length ? [it.head] : []).concat(it.rows);
+  var n = Math.max.apply(null, all.map(function(r){ return r.length; }).concat([1]));
+  var len = [];
+  /* a heading may wrap onto two lines, so only its longest word sets the width */
+  for(var c = 0; c < n; c++)
+    len.push(Math.max.apply(null, it.rows.map(function(r){ return stripMarks(r[c] || '').length; }).concat(
+      (it.head[c] || '').split(/\s+/).map(function(x){ return x.length; }), [0])));
+  var anyLong = len.some(function(l){ return l > 18; });
+  var h = '<table class="grid' + (anyLong ? '' : ' auto') + '"><colgroup>';
+  len.forEach(function(l){
+    h += anyLong && l <= 18 ? '<col style="width:' + Math.max(12, Math.min(40, Math.round(l * 2.2) + 6)) + 'mm">' : '<col>';
+  });
+  h += '</colgroup>';
+  function row(r, cls){
+    var x = '<tr' + (cls ? ' class="' + cls + '"' : '') + '>';
+    for(var c = 0; c < n; c++) x += '<td>' + withBlanks(r[c] || '') + '</td>';
+    return x + '</tr>';
+  }
+  if(it.head.length) h += row(it.head, 'h');
+  it.rows.forEach(function(r){ h += row(r, ''); });
+  return h + '</table>';
+}
+
 /* a help box and the picture that goes with it are printed side by side, the way
    the school's own picture questions read */
 function pairBoxAndPicture(items){
@@ -581,7 +647,7 @@ function groupForPrint(blocks){
       var k = blocks[j].kind;
       if(k === 'section') break;
       if(k === 'q'){ if(seenQ) break; seenQ = true; }
-      if(k === 'lines' || k === 'match' || k === 'box' ||
+      if(k === 'lines' || k === 'match' || k === 'box' || k === 'table' || k === 'frame' ||
          k === 'boxpic' || k === 'pic') break;                   /* tall: let it flow */
       keep += blocks[j].html;
       if(k !== 'blank') kept++;
@@ -732,7 +798,9 @@ var BEFORE_PUNCT = /[A-Za-z0-9)\]'’”"]\s+[.,;:?!]/;
 
 function check(){
   var src = el('body').value;
-  var items = parse(src);
+  var items = [].concat.apply([], parse(src).map(function(it){
+    return it.inner ? [it].concat(it.inner) : [it];
+  }));
   var issues = [];
   function add(sev, line, what, fixable){
     issues.push({ sev:sev, line:line, what:what, fixable:!!fixable });
@@ -747,7 +815,7 @@ function check(){
   items.forEach(function(it, idx){
     if(it.kind === 'blank' || it.kind === 'pic') return;
     var t = stripMarks(it.raw);
-    var answerFollows = ['opts','box','match','lines','pic'].indexOf(nextKind(items, idx)) > -1;
+    var answerFollows = ['opts','box','match','lines','pic','table','frame'].indexOf(nextKind(items, idx)) > -1;
 
     if(BEFORE_PUNCT.test(t))           add('err', it.line, 'Space before punctuation — "' + snip(t, BEFORE_PUNCT) + '"', true);
     if(/[.,;:?!][A-Za-z]/.test(t))     add('err', it.line, 'Missing space after punctuation — "' + snip(t, /[.,;:?!][A-Za-z]/) + '"', true);
@@ -1356,8 +1424,13 @@ function Numbering(numDoc, styleDoc){
 }
 
 /* the words of one paragraph, with its pictures in reading order */
+function emuMm(v){ v = parseInt(v, 10); return v > 0 ? Math.round(v / 36000) : 0; }
+function within(x, top, name){
+  for(var a = x.parentNode; a && a !== top; a = a.parentNode) if(a.localName === name) return true;
+  return false;
+}
 function paraContent(p){
-  var out = { s:'', pics:[] };
+  var out = { s:'', pics:[], frames:[] };
   (function walk(n){
     Array.prototype.forEach.call(n.childNodes, function(c){
       var ln = c.localName;
@@ -1369,13 +1442,50 @@ function paraContent(p){
       else if(ln === 'noBreakHyphen') out.s += '-';
       else if(ln === 'p'){ out.s += '\n'; walk(c); }          /* a text box inside the line */
       else if(ln === 'drawing' || ln === 'pict'){
-        var blip = c.getElementsByTagNameNS('*', 'blip')[0] || c.getElementsByTagNameNS('*', 'imagedata')[0];
-        var ext = c.getElementsByTagNameNS('*', 'extent')[0];
-        var rid = blip && (blip.getAttributeNS(RNS, 'embed') || blip.getAttributeNS(RNS, 'id') ||
-                           blip.getAttribute('r:embed') || blip.getAttribute('r:id'));
-        if(rid) out.pics.push({ rid:rid, h:ext ? Math.round(parseInt(ext.getAttribute('cy'), 10) / 36000) : 0 });
-        var tb = c.getElementsByTagNameNS(WNS, 'txbxContent')[0];
-        if(tb) walk(tb);
+        var ext = c.getElementsByTagNameNS('*', 'extent')[0], allH = ext ? emuMm(ext.getAttribute('cy')) : 0;
+        /* every picture in the drawing (a group can hold several), not those inside a text box */
+        var blips = Array.prototype.slice.call(c.getElementsByTagNameNS('*', 'blip'))
+                      .concat(Array.prototype.slice.call(c.getElementsByTagNameNS('*', 'imagedata')))
+                      .filter(function(b){ return !within(b, c, 'txbxContent'); });
+        blips.forEach(function(blip){
+          var rid = blip.getAttributeNS(RNS, 'embed') || blip.getAttributeNS(RNS, 'id') ||
+                    blip.getAttribute('r:embed') || blip.getAttribute('r:id');
+          if(!rid) return;
+          var h = allH, pic = blip;
+          while(pic && pic !== c && pic.localName !== 'pic') pic = pic.parentNode;
+          if(pic && pic !== c && blips.length > 1){
+            var e2 = pic.getElementsByTagNameNS('*', 'ext')[0];
+            if(e2 && e2.getAttribute('cy')) h = emuMm(e2.getAttribute('cy'));
+          }
+          out.pics.push({ rid:rid, h:h });
+        });
+        var tbs = Array.prototype.filter.call(c.getElementsByTagNameNS(WNS, 'txbxContent'),
+                                             function(t){ return !within(t, c, 'txbxContent'); });
+        var noLine = function(x){
+          var sh = x; while(sh && sh !== c.parentNode && sh.localName !== 'wsp' && sh.localName !== 'shape' &&
+                            sh.localName !== 'rect' && sh.localName !== 'roundrect') sh = sh.parentNode;
+          if(!sh || sh === c.parentNode) return false;
+          if(sh.getAttribute && sh.getAttribute('stroked') === 'f') return true;
+          var l = Array.prototype.filter.call(sh.getElementsByTagNameNS('*', 'ln'), function(n){ return !within(n, sh, 'txbxContent'); })[0];
+          return !!(l && l.getElementsByTagNameNS('*', 'noFill').length);
+        };
+        tbs.forEach(function(tb){
+          var lines = [];
+          wkids(tb, 'p').forEach(function(q){
+            var inner = paraContent(q);
+            lines = lines.concat(inner.s.split('\n'));
+            out.pics = out.pics.concat(inner.pics); out.frames = out.frames.concat(inner.frames);
+          });
+          wkids(tb, 'tbl').forEach(function(t){ lines.push(t.textContent); });
+          if(noLine(tb)) out.s += '\n' + lines.join('\n');          /* a text box with no border */
+          else out.frames.push({ lines:lines, h:0 });
+        });
+        if(!blips.length && !tbs.length){
+          /* a drawn rectangle the child writes in */
+          var g = c.getElementsByTagNameNS('*', 'prstGeom')[0];
+          if(g && /^(?:rect|roundRect|flowChartProcess|flowChartAlternateProcess|snip|plaque|frame)/.test(g.getAttribute('prst') || '') &&
+             allH >= 6) out.frames.push({ lines:[], h:allH });
+        }
       }
       else walk(c);
     });
@@ -1450,10 +1560,19 @@ function readHeader(lines, info){
 
 /* a table: question rows, a match-the-columns table, a help box, or plain rows */
 var LABEL_CELL = /^\(?(?:Q\.?\s*)?(?:\d{1,2}|[a-hA-H]|[ivx]{1,4}|[\u0915-\u0939])\s*[.):]?\)?$/i;
+var LETTERHEAD = /dream[.,]?\s*achieve|education with a smile|p\.?\s*p\.?\s*international school/i;
 function tableLines(rows, hi, prev){
-  var out = [], txt = function(c){ return c.join(' ').replace(/\s+/g, ' ').trim(); };
+  var out = [], txt = function(c){ return c.join(' ').replace(/\s+/g, ' ').replace(/\|/g, '/').trim(); };
+  var allRows = rows;
+  if(LETTERHEAD.test(rows.map(function(r){ return r.map(txt).join(' '); }).join(' '))) return out;   /* the old footer */
   rows = rows.filter(function(r){ return r.some(function(c){ return txt(c); }); });
   if(!rows.length) return out;
+  /* a one-cell table is a box round its text; a whole paper typed inside one is just read */
+  if(rows.length === 1 && rows[0].length === 1){
+    var inner = rows[0][0].map(function(l){ return tidyLine(l, hi); }).filter(Boolean);
+    if(inner.some(function(l){ return SEC_RE.test(l) || NUM_RE.test(l); })) return inner;
+    return ['FRAME:'].concat(inner, ['END FRAME']);
+  }
   /* a heading such as SECTION C | (31 Marks) laid out in a table */
   var one = rows.length === 1 ? tidyLine(rows[0].map(txt).filter(Boolean).join(' '), hi) : '';
   if(one && SEC_RE.test(one)) return [one];
@@ -1475,7 +1594,10 @@ function tableLines(rows, hi, prev){
                !LABEL_CELL.test(head[0] || '');
   var body = isHead ? rows.slice(1) : rows;
   var qRows = body.filter(function(r){ return r.length >= 2 && LABEL_CELL.test(txt(r[0])) && txt(r[0]); });
-  if(body.length && qRows.length >= Math.max(1, body.length * 0.6)){
+  /* only a table of questions (Q. No | Question | Marks), not a numbered list of words to fill in */
+  var wordsPerRow = qRows.reduce(function(n, r){ return n + wordCount(r.slice(1).map(txt).join(' ')); }, 0) / Math.max(1, qRows.length);
+  var asksQ = /q\.?\s*no|question|marks|\u092a\u094d\u0930\u0936\u094d\u0928|\u0905\u0902\u0915/i.test(head.join(' ')) || wordsPerRow >= 5;
+  if(body.length && asksQ && qRows.length >= Math.max(1, body.length * 0.6)){
     body.forEach(function(r){
       var lab = txt(r[0]).replace(/^\(|\)$/g, '').replace(/[.):]$/, '');
       var last = r.length > 2 ? txt(r[r.length - 1]) : '';
@@ -1512,8 +1634,16 @@ function tableLines(rows, hi, prev){
     (plainHead ? cut.slice(1) : cut).forEach(function(r){ out.push(r.join(' | ')); });
     return out;
   }
-  /* any other table (survey figures, data) keeps its rows as written */
-  rows.forEach(function(r){ var l = r.map(txt).filter(Boolean).join(' | '); if(l) out.push(l); });
+  /* any other table (survey figures, data, a grid to fill in) is printed as a ruled
+     table with every row and cell, empty ones included */
+  while(allRows.length && !allRows[0].some(function(c){ return txt(c); })) allRows = allRows.slice(1);
+  var first = allRows[0].map(txt);
+  var hasHead = allRows.length > 1 && first.every(function(c){ return c && wordCount(c) <= 5; });
+  out.push('TABLE: ' + (hasHead ? first.join(' | ') : ''));
+  (hasHead ? allRows.slice(1) : allRows).forEach(function(r){
+    var cs = r.map(txt);
+    out.push((cs.length === 1 ? cs[0] + ' |' : cs.join(' | ')).trim());
+  });
   return out;
 }
 
@@ -1553,10 +1683,14 @@ function buildFromDocx(files, doc, numDoc, styleDoc, rels, fname){
   /* blocks in reading order: { lines:[...], pics:[...] } */
   var blocks = [];
   function para(p){
-    var c = paraContent(p), lab = num.label(wkid(p, 'pPr'));
+    var c = paraContent(p), pPr = wkid(p, 'pPr'), lab = num.label(pPr);
     var text = c.s;
     if(lab && text.trim()) text = lab + (/\s$/.test(lab) ? '' : ' ') + text.replace(/^\s+/, '');
-    blocks.push({ kind:'p', lines:text.split('\n'), pics:c.pics });
+    var bdr = wkid(pPr, 'pBdr');
+    var boxed = !!bdr && Array.prototype.some.call(bdr.childNodes, function(e){
+      return e.localName && !/^(?:nil|none)$/.test(wattr(e, 'val') || 'none');
+    });
+    blocks.push({ kind:'p', lines:text.split('\n'), pics:c.pics, frames:c.frames, boxed:boxed });
   }
   function table(tb){
     var rows = wkids(tb, 'tr').map(function(tr){
@@ -1595,18 +1729,26 @@ function buildFromDocx(files, doc, numDoc, styleDoc, rels, fname){
        parseInt(m[1], 10) === instrLast + 1){ instrLast++; return false; }
     return true;
   };
-  var headLines = [], bi = 0;
+  var headLines = [], bi = 0, prePics = [];
+  var SCHOOL = /school|vidyalaya|\u0935\u093f\u0926\u094d\u092f\u093e\u0932\u092f|dream[.,]?\s*achieve/i;
+  var keepPics = function(bk, text){
+    if(bi >= 3 && !SCHOOL.test(text)) prePics = prePics.concat(bk.pics);   /* the old letterhead logo is dropped */
+  };
   for(; bi < blocks.length; bi++){
     var bk = blocks[bi];
     if(bk.kind === 't'){
       var flat = bk.rows.map(function(r){ return r.map(function(c){ return c.join(' '); }).join('\t'); });
       if(flat.some(startsBody)) break;
+      keepPics(bk, flat.join(' '));
       headLines = headLines.concat(flat); continue;
     }
     var at = -1;
     bk.lines.some(function(l, i){ if(startsBody(l)){ at = i; return true; } return false; });
     if(at >= 0){ headLines = headLines.concat(bk.lines.slice(0, at)); bk.lines = bk.lines.slice(at); break; }
-    headLines = headLines.concat(bk.lines);
+    var fl = [].concat.apply([], bk.frames.map(function(f){ return f.lines; }));
+    if(fl.some(startsBody)){ headLines = headLines.concat(bk.lines); bk.lines = []; break; }
+    keepPics(bk, bk.lines.concat(fl).join(' '));
+    headLines = headLines.concat(bk.lines, fl);
   }
   var lead = readHeader(headLines, info);
 
@@ -1619,7 +1761,32 @@ function buildFromDocx(files, doc, numDoc, styleDoc, rels, fname){
     pics.push({ path:path, name:target.split('/').pop() });
     out.push('PIC:' + (pc.h ? ' ' + Math.max(15, Math.min(120, pc.h)) : ''));
   }
+  prePics.forEach(addPic);
+  var inFrame = false;
+  function endFrame(){
+    if(!inFrame) return;
+    if(out[out.length - 1] === 'FRAME:') out.pop(); else out.push('END FRAME');
+    inFrame = false;
+  }
+  function frameOut(f){
+    var ls = f.lines.map(function(l){ return tidyLine(l, hi); }).filter(Boolean);
+    if(LETTERHEAD.test(ls.join(' '))) return;
+    if(!ls.length && !f.h) return;
+    out.push('FRAME:' + (!ls.length ? ' ' + Math.max(8, Math.min(240, f.h)) : ''));
+    ls.forEach(function(l){ out.push(l); });
+    out.push('END FRAME');
+  }
   blocks.slice(bi).forEach(function(bk){
+    /* a section heading keeps the school's own heading style, border or not */
+    if(bk.kind === 'p' && bk.boxed && !bk.lines.some(function(l){ return SEC_RE.test(tidyLine(l, hi)); })){
+      /* paragraphs with a border round them, as a boxed passage or notice */
+      flushRuled();
+      if(!inFrame){ out.push('FRAME:'); inFrame = true; }
+      bk.lines.forEach(function(raw){ var l = tidyLine(raw, hi); if(l && !END_RE.test(l) && !LETTERHEAD.test(l)) out.push(l); });
+      if(bk.pics.length || bk.frames.length){ endFrame(); bk.frames.forEach(frameOut); bk.pics.forEach(addPic); }
+      return;
+    }
+    endFrame();
     if(bk.kind === 't'){
       flushRuled();
       var prev = out.filter(function(l){ return l.trim(); }).pop() || '';
@@ -1635,20 +1802,31 @@ function buildFromDocx(files, doc, numDoc, styleDoc, rels, fname){
       if(!l){ if(!bk.pics.length && out.length && out[out.length - 1] !== '') out.push(''); return; }
       out.push(l);
     });
+    if(bk.frames.length){ flushRuled(); bk.frames.forEach(frameOut); }
     if(bk.pics.length){ flushRuled(); bk.pics.forEach(addPic); }
   });
+  endFrame();
   flushRuled();
   while(out.length && !out[out.length - 1]) out.pop();
   while(out.length && !out[0]) out.shift();
   /* a long numbered paragraph with no marks is a paragraph of a passage, not a question */
-  out = out.map(function(l){
+  /* lines inside a box or a table are left as the paper has them */
+  var boxedLine = (function(){
+    var inF = false;
+    return out.map(function(l){
+      if(/^FRAME\b/.test(l)){ inF = true; return true; }
+      if(/^END FRAME$/.test(l)){ inF = false; return true; }
+      return inF || / \| |\|$|^TABLE:/.test(l);
+    });
+  })();
+  out = out.map(function(l, i){
     var m = l.match(/^(\d{1,2})\. (.*)$/);
-    return m && !MARK_RE.test(l) && wordCount(m[2]) > 30 ? '(' + m[1] + ') ' + m[2] : l;
+    return m && !boxedLine[i] && !MARK_RE.test(l) && wordCount(m[2]) > 30 ? '(' + m[1] + ') ' + m[2] : l;
   });
   /* one numbering style for the whole paper */
   var Q = hi ? '\u092a\u094d\u0930' : 'Q';
   if(out.some(function(l){ return new RegExp('^' + Q + '\\d').test(l); }))
-    out = out.map(function(l){ return l.replace(/^(\d{1,2})\. (?=\S)/, Q + '$1. '); });
+    out = out.map(function(l, i){ return boxedLine[i] ? l : l.replace(/^(\d{1,2})\. (?=\S)/, Q + '$1. '); });
 
   if(!out.some(function(l){ return l.trim(); })) throw new Error('empty');
   var MIME = { png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', bmp:'image/bmp', webp:'image/webp' };

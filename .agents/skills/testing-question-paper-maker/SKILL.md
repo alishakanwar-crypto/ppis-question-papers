@@ -287,6 +287,21 @@ pictures and, if `#docxpdf` is ticked, clicks `#savepdf`. Status goes to `#docxn
 - An unsupported Word picture (e.g. `.emf`) leaves `PICS[i] = ''` with an "empty" chip; choosing a
   PNG afterwards must fill that slot (`PICS.indexOf('')`), not append, and auto-print is skipped.
 
+### Keep my Word layout (`#docxkeep`, default on)
+
+The teacher's complaint was that the re-layout "changed everything"; with `#docxkeep` ticked the
+paper is drawn as laid out in Word into `#wordbody` (inside `#wordsheet`, shown when
+`body.wordmode`; `#sheet` is then hidden) by `vendor/docx-preview.min.js`, after `prepareWordLayout()`
+rewrites `word/document.xml`: docx-preview only draws `pic:pic`, so `hoistShapes()` turns each
+`wps` text box/outlined shape, `wpg` group and VML `w:pict` (textbox, rect, imagedata) into a
+one-cell table (or inline picture) under its paragraph, and takes the Choice branch of
+`mc:AlternateContent` (docx-preview would otherwise always use the VML fallback).
+`buildFromDocx()` still fills box 1, box 2 and the checker. Fixture `~/wordimp2/mk2.py` makes
+`shapes-qp.docx` with an anchored text box + VML fallback, a group (picture + label box), a VML text
+box, a VML picture and an empty VML rectangle: all must show in the PDF. Also check: typing in
+`#body` (or Sample/Clear) leaves word mode; unticking `#docxkeep` gives the old layout; an `.emf`
+picture warns and skips auto-print; no request leaves localhost.
+
 ## Devin Secrets Needed
 
 None — the page is static with no backend, no login and no API keys.

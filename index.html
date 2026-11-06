@@ -71,6 +71,20 @@
   .page{border:1px solid #000;padding:6mm 5mm;min-height:279mm;
         font-family:var(--pfont);font-size:var(--psize);line-height:var(--pline)}
   .frame{display:none}
+  /* a Word paper shown as the teacher laid it out: only the fonts, the page edges
+     and the logo are the school's */
+  #wordsheet{display:none}
+  body.wordmode #sheet{display:none}
+  body.wordmode #wordsheet{display:block}
+  .whead{min-height:13mm}
+  .whead img{height:10mm;margin:1mm 0 0 -2mm}
+  #wordbody section.docx{padding:0 !important;margin:0 !important;width:auto !important;min-height:0 !important;
+    box-shadow:none !important;background:none !important;display:block}
+  #wordbody section.docx *{font-family:var(--pfont) !important}
+  #wordbody table{max-width:100% !important;border-collapse:collapse}
+  #wordbody img,#wordbody svg{max-width:100%;height:auto}
+  #wordbody p{orphans:2;widows:2}
+  #wordbody tr,#wordbody img{page-break-inside:avoid;break-inside:avoid}
   .head{position:relative;text-align:center;min-height:19mm;padding-top:3mm}
   .head img{position:absolute;left:0;top:1mm;height:10mm}
   .head .tl{font-weight:bold;text-decoration:underline}
@@ -194,9 +208,12 @@ Write the answers in the space provided.</textarea></div>
 
       <h2 style="margin-top:20px">2 &nbsp;Questions</h2>
       <div class="upload">
-        <label for="docxfile"><b>Have the paper in Word?</b> Upload the .docx and it is laid out in the school format,
-          checked for errors and made into a PDF.</label>
+        <label for="docxfile"><b>Have the paper in Word?</b> Upload the .docx: it is checked for errors and made into a
+          PDF with the school logo and border.</label>
         <input type="file" id="docxfile" accept=".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+        <div class="chk" style="margin:6px 0 0"><input type="checkbox" id="docxkeep" checked>
+          <label for="docxkeep" style="margin:0">Keep my Word layout: boxes, tables and pictures stay where they are
+            (untick to retype the paper in the maker's own layout)</label></div>
         <div class="chk" style="margin:6px 0 0"><input type="checkbox" id="docxpdf" checked>
           <label for="docxpdf" style="margin:0">Open the Save-as-PDF window as soon as the file is read</label></div>
         <p id="docxnote" class="hint"></p>
@@ -294,7 +311,12 @@ Write the answers in the space provided.</textarea></div>
   <h2 style="margin:22px 0 10px">5 &nbsp;Preview</h2>
 </div>
 
-<div class="scale"><div class="sheet" id="sheet"></div></div>
+<div class="scale"><div class="sheet" id="sheet"></div>
+  <div class="sheet" id="wordsheet"><div class="frame"></div><div class="page wpage">
+    <div class="whead"><img src="ppis-logo.png" alt="PP International School"></div>
+    <div id="wordstyle"></div><div id="wordbody"></div></div></div></div>
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/docx-preview.min.js"></script>
 
 <script>
 /* ------------------------------------------------------------------ storage */
@@ -1304,6 +1326,7 @@ el('savepdf').addEventListener('click', function(){
 });
 ['grade','subject','title'].forEach(function(f){ el(f).addEventListener('input', refreshPdfName); });
 el('sample').addEventListener('click', function(){
+  leaveWordLayout();
   el('body').value = sampleForLanguage();
   if(hindi()){
     el('subject').value = 'हिंदी';
@@ -1320,6 +1343,7 @@ el('sample').addEventListener('click', function(){
 });
 el('clear').addEventListener('click', function(){
   if(!confirm('Clear the questions? The paper details stay as they are.')) return;
+  leaveWordLayout();
   el('body').value = ''; save(); render(); el('report').innerHTML = '';
 });
 
@@ -1647,8 +1671,215 @@ function tableLines(rows, hi, prev){
   return out;
 }
 
+/* The page that draws the Word paper shows pictures but leaves text boxes, drawn
+   boxes and grouped shapes empty. Before it is drawn, each such shape is moved out
+   of its line into a box of the same size just below that line, holding the shape's
+   own text and pictures, so nothing in it is lost. */
+var WNS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+    WPNS = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
+    ANS = 'http://schemas.openxmlformats.org/drawingml/2006/main',
+    PICNS = 'http://schemas.openxmlformats.org/drawingml/2006/picture',
+    RNS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+function byLocal(root, name){
+  return Array.prototype.filter.call(root.getElementsByTagName('*'), function(e){ return e.localName === name; });
+}
+function kidsLocal(e, name){
+  return Array.prototype.filter.call(e.childNodes, function(c){ return c.localName === name; });
+}
+function upTo(e, name){ for(var a = e.parentNode; a && a.nodeType === 1; a = a.parentNode) if(a.localName === name) return a; return null; }
+function wEl(doc, name, attrs, kids){
+  var e = doc.createElementNS(WNS, 'w:' + name);
+  Object.keys(attrs || {}).forEach(function(k){ e.setAttributeNS(WNS, 'w:' + k, attrs[k]); });
+  (kids || []).forEach(function(c){ e.appendChild(c); });
+  return e;
+}
+/* a VML length (pt, in, cm, mm, px) in EMU */
+function vmlEmu(style, key){
+  var m = new RegExp('(?:^|;)\\s*' + key + '\\s*:\\s*([\\d.]+)\\s*(pt|in|cm|mm|px)?', 'i').exec(style || '');
+  if(!m) return 0;
+  var per = { pt:12700, 'in':914400, cm:360000, mm:36000, px:9525 }[(m[2] || 'px').toLowerCase()];
+  return Math.round(parseFloat(m[1]) * per);
+}
+function boxTable(doc, paras, outlined, cx, cy){
+  var tw = Math.max(720, Math.min(10000, Math.round(cx / 635) || 9000)), th = Math.round(cy / 635);
+  var side = function(n){ return wEl(doc, n, outlined ? { val:'single', sz:'6', space:'0', color:'000000' } : { val:'nil' }); };
+  var tc = wEl(doc, 'tc', {}, [wEl(doc, 'tcPr', {}, [wEl(doc, 'tcW', { w:String(tw), type:'dxa' })])]);
+  paras.forEach(function(p){ tc.appendChild(p); });
+  if(!paras.length || paras[paras.length - 1].localName !== 'p') tc.appendChild(wEl(doc, 'p'));
+  var tr = wEl(doc, 'tr', {}, th ? [wEl(doc, 'trPr', {}, [wEl(doc, 'trHeight', { val:String(th), hRule:'atLeast' })])] : []);
+  tr.appendChild(tc);
+  return wEl(doc, 'tbl', {}, [
+    wEl(doc, 'tblPr', {}, [wEl(doc, 'tblW', { w:String(tw), type:'dxa' }),
+      wEl(doc, 'tblBorders', {}, ['top', 'left', 'bottom', 'right'].map(side))]),
+    wEl(doc, 'tblGrid', {}, [wEl(doc, 'gridCol', { w:String(tw) })]), tr]);
+}
+function picPara(doc, picNode, cx, cy){
+  var inl = doc.createElementNS(WPNS, 'wp:inline'), ext = doc.createElementNS(WPNS, 'wp:extent');
+  ext.setAttribute('cx', String(cx || 1800000)); ext.setAttribute('cy', String(cy || 1800000));
+  var pr = doc.createElementNS(WPNS, 'wp:docPr'); pr.setAttribute('id', '1'); pr.setAttribute('name', 'Picture');
+  if(!kidsLocal(picNode, 'spPr').length){
+    var sp = doc.createElementNS(PICNS, 'pic:spPr'), xf = doc.createElementNS(ANS, 'a:xfrm'), ae = doc.createElementNS(ANS, 'a:ext');
+    ae.setAttribute('cx', ext.getAttribute('cx')); ae.setAttribute('cy', ext.getAttribute('cy'));
+    xf.appendChild(ae); sp.appendChild(xf); picNode.appendChild(sp);
+  }
+  var g = doc.createElementNS(ANS, 'a:graphic'), gd = doc.createElementNS(ANS, 'a:graphicData');
+  gd.setAttribute('uri', PICNS); gd.appendChild(picNode); g.appendChild(gd);
+  inl.appendChild(ext); inl.appendChild(pr); inl.appendChild(g);
+  return wEl(doc, 'p', {}, [wEl(doc, 'r', {}, [wEl(doc, 'drawing', {}, [inl])])]);
+}
+/* a VML picture becomes an ordinary Word picture of the same size */
+function vmlPic(doc, idata, style){
+  var id = idata.getAttributeNS(RNS, 'id') || idata.getAttribute('r:id') || idata.getAttribute('o:relid');
+  if(!id) return null;
+  var pic = doc.createElementNS(PICNS, 'pic:pic'), bf = doc.createElementNS(PICNS, 'pic:blipFill'),
+      blip = doc.createElementNS(ANS, 'a:blip');
+  blip.setAttributeNS(RNS, 'r:embed', id); bf.appendChild(blip); pic.appendChild(bf);
+  return picPara(doc, pic, vmlEmu(style, 'width'), vmlEmu(style, 'height'));
+}
+function txbxParas(node){
+  var t = byLocal(node, 'txbxContent')[0];
+  return t ? Array.prototype.filter.call(t.childNodes, function(c){ return c.nodeType === 1; }) : [];
+}
+function dmlPieces(doc, node, out){
+  kidsLocal(node, 'grpSp').forEach(function(g){ dmlPieces(doc, g, out); });
+  (node.localName === 'wsp' ? [node] : kidsLocal(node, 'wsp')).forEach(function(sp){
+    var spPr = kidsLocal(sp, 'spPr')[0], ln = spPr && kidsLocal(spPr, 'ln')[0];
+    var ref = byLocal(sp, 'lnRef')[0];
+    var outlined = ln ? !kidsLocal(ln, 'noFill').length : !!(ref && +ref.getAttribute('idx') > 0);
+    var ext = spPr && byLocal(spPr, 'ext')[0], paras = txbxParas(sp);
+    var cx = ext ? +ext.getAttribute('cx') : 0, cy = ext ? +ext.getAttribute('cy') : 0;
+    if(paras.length || outlined) out.push(boxTable(doc, paras, outlined, cx, cy));
+  });
+  kidsLocal(node, 'pic').forEach(function(pic){
+    var ext = byLocal(pic, 'ext')[0];
+    out.push(picPara(doc, pic, ext && +ext.getAttribute('cx'), ext && +ext.getAttribute('cy')));
+  });
+}
+function vmlPieces(doc, node, out){
+  Array.prototype.forEach.call(node.childNodes, function(sh){
+    if(sh.nodeType !== 1) return;
+    if(sh.localName === 'group'){ vmlPieces(doc, sh, out); return; }
+    if(!/^(?:rect|roundrect|shape|oval)$/.test(sh.localName)) return;
+    var style = sh.getAttribute('style') || '', paras = txbxParas(sh), idata = kidsLocal(sh, 'imagedata')[0];
+    if(idata && !paras.length){ var pp = vmlPic(doc, idata, style); if(pp) out.push(pp); return; }
+    var outlined = sh.getAttribute('stroked') !== 'f' && sh.getAttribute('stroked') !== 'false';
+    if(paras.length || (outlined && sh.localName !== 'shape'))
+      out.push(boxTable(doc, paras, outlined, vmlEmu(style, 'width'), vmlEmu(style, 'height')));
+  });
+}
+/* the shape leaves its line; a line that held nothing else goes with it */
+function placeAfter(doc, anchor, pieces){
+  var p = upTo(anchor, 'p');
+  if(!p || !p.parentNode) return false;
+  var box = p.parentNode, ref = p.nextSibling;
+  pieces.forEach(function(x){ box.insertBefore(x, ref); });
+  anchor.parentNode.removeChild(anchor);
+  if(!p.textContent.trim() && !byLocal(p, 'drawing').length && !byLocal(p, 'pict').length && pieces.length) box.removeChild(p);
+  var last = box.lastElementChild;
+  if(box.localName === 'tc' && (!last || last.localName !== 'p')) box.appendChild(wEl(doc, 'p'));
+  return true;
+}
+function hoistShapes(doc){
+  var root = doc.documentElement;
+  for(var round = 0; round < 6; round++){
+    var did = false;
+    byLocal(doc, 'AlternateContent').forEach(function(ac){
+      if(!root.contains(ac) || upTo(ac, 'txbxContent')) return;
+      var ch = kidsLocal(ac, 'Choice')[0], dr = ch && byLocal(ch, 'drawing')[0];
+      if(dr){ ac.parentNode.replaceChild(dr, ac); did = true; }
+    });
+    byLocal(doc, 'drawing').forEach(function(dr){
+      if(!root.contains(dr) || upTo(dr, 'txbxContent')) return;
+      var gd = byLocal(dr, 'graphicData')[0];
+      if(!gd || kidsLocal(gd, 'pic').length) return;
+      var pieces = [], ext = byLocal(dr, 'extent')[0];
+      kidsLocal(gd, 'wgp').forEach(function(g){ dmlPieces(doc, g, pieces); });
+      kidsLocal(gd, 'wsp').forEach(function(sp){
+        dmlPieces(doc, sp, pieces);
+        var t = pieces[pieces.length - 1];
+        if(t && t.localName === 'tbl' && ext){
+          var tw = String(Math.max(720, Math.min(10000, Math.round(+ext.getAttribute('cx') / 635))));
+          byLocal(t, 'tblW').concat(byLocal(t, 'tcW')).forEach(function(w){ w.setAttributeNS(WNS, 'w:w', tw); });
+          byLocal(t, 'gridCol')[0].setAttributeNS(WNS, 'w:w', tw);
+          var h = byLocal(t, 'trHeight')[0];
+          if(!h) byLocal(t, 'tr')[0].insertBefore(wEl(doc, 'trPr', {}, [wEl(doc, 'trHeight',
+              { val:String(Math.round(+ext.getAttribute('cy') / 635)), hRule:'atLeast' })]), byLocal(t, 'tc')[0]);
+        }
+      });
+      if(!kidsLocal(gd, 'wgp').length && !kidsLocal(gd, 'wsp').length) return;
+      if(placeAfter(doc, dr, pieces)) did = true;
+    });
+    byLocal(doc, 'pict').forEach(function(pc){
+      if(!root.contains(pc) || upTo(pc, 'txbxContent')) return;
+      var pieces = [];
+      vmlPieces(doc, pc, pieces);
+      if(placeAfter(doc, pc, pieces)) did = true;
+    });
+    if(!did) break;
+  }
+}
+function prepareWordLayout(buf){
+  return JSZip.loadAsync(buf).then(function(zip){
+    return zip.file('word/document.xml').async('string').then(function(xml){
+      var doc = new DOMParser().parseFromString(xml, 'application/xml');
+      hoistShapes(doc);
+      zip.file('word/document.xml', new XMLSerializer().serializeToString(doc));
+      return zip.generateAsync({ type:'arraybuffer' });
+    });
+  });
+}
+/* Word draws one box round paragraphs that share a border, so they are joined here */
+function joinBorderedParagraphs(root){
+  Array.prototype.forEach.call(root.querySelectorAll('p'), function(p){
+    var n = p.nextElementSibling;
+    if(!n || n.tagName !== 'P' || !p.style.borderLeftStyle || p.style.borderLeftStyle === 'none') return;
+    if(n.style.borderLeft !== p.style.borderLeft || n.style.borderRight !== p.style.borderRight) return;
+    p.style.borderBottom = 'none'; p.style.marginBottom = '0'; p.style.paddingBottom = '0';
+    n.style.borderTop = 'none'; n.style.marginTop = '0'; n.style.paddingTop = '0';
+  });
+}
+/* Show the Word paper itself, with every box, table, text box and picture where the
+   teacher put it. Only the old letterhead goes (the school logo is printed instead). */
+function showWordLayout(buf, info){
+  var body = el('wordbody'), style = el('wordstyle');
+  body.innerHTML = ''; style.innerHTML = '';
+  return prepareWordLayout(buf).then(function(b){ return docx.renderAsync(b, body, style, {
+    className:'docx', inWrapper:false, ignoreWidth:true, ignoreHeight:true, breakPages:false,
+    renderHeaders:false, renderFooters:false, useBase64URL:true, ignoreLastRenderedPageBreak:true
+  }); }).then(function(){
+    joinBorderedParagraphs(body);
+    var sec = body.querySelector('section.docx'), art = sec && (sec.querySelector('article') || sec);
+    if(art){
+      var kids = Array.prototype.slice.call(art.children), seenText = false;
+      kids.slice(0, 4).some(function(k){
+        var t = k.textContent.replace(/\s+/g, ' ').trim();
+        if(!t && k.querySelector('img,svg')){ k.remove(); return false; }
+        if(t && LETTERHEAD.test(t) && t.length < 160){ k.remove(); return false; }
+        if(t) seenText = true;
+        return seenText;
+      });
+      kids.slice(-3).forEach(function(k){
+        var t = k.textContent.replace(/\s+/g, ' ').trim();
+        if(t && /dream[.,]?\s*achieve|education with a smile/i.test(t) && t.length < 80) k.remove();
+      });
+    }
+    el('wordsheet').classList.toggle('hi', info.hi);
+    document.body.classList.add('wordmode');
+  });
+}
+function leaveWordLayout(){
+  if(!document.body.classList.contains('wordmode')) return;
+  document.body.classList.remove('wordmode');
+  el('wordbody').innerHTML = ''; el('wordstyle').innerHTML = '';
+  var note = el('docxnote');
+  note.className = 'hint';
+  note.textContent = 'The preview now shows the questions as typed in box 2, in the maker\'s own layout.';
+}
+el('body').addEventListener('input', leaveWordLayout);
+
 function importDocx(file){
   var note = el('docxnote');
+  leaveWordLayout();
   note.className = 'hint'; note.textContent = 'Reading ' + file.name + ' \u2026';
   if(/\.doc$/i.test(file.name)){
     note.className = 'hint bad';
@@ -1660,7 +1891,10 @@ function importDocx(file){
     if(!files || !files['word/document.xml']) throw new Error('notdocx');
     return Promise.all([zipXml(files, 'word/document.xml'), zipXml(files, 'word/numbering.xml'),
                         zipXml(files, 'word/styles.xml'), zipXml(files, 'word/_rels/document.xml.rels')])
-      .then(function(x){ return buildFromDocx(files, x[0], x[1], x[2], x[3], file.name); });
+      .then(function(x){
+        var keep = el('docxkeep').checked && window.docx && docx.renderAsync;
+        return buildFromDocx(files, x[0], x[1], x[2], x[3], file.name, keep ? buf : null);
+      });
   }).catch(function(e){
     note.className = 'hint bad';
     note.textContent = e && e.message === 'empty'
@@ -1671,7 +1905,7 @@ function importDocx(file){
   });
 }
 
-function buildFromDocx(files, doc, numDoc, styleDoc, rels, fname){
+function buildFromDocx(files, doc, numDoc, styleDoc, rels, fname, wordBuf){
   var num = new Numbering(numDoc, styleDoc), rel = {};
   if(rels) Array.prototype.forEach.call(rels.getElementsByTagName('Relationship'), function(r){
     rel[r.getAttribute('Id')] = r.getAttribute('Target');
@@ -1852,6 +2086,32 @@ function buildFromDocx(files, doc, numDoc, styleDoc, rels, fname){
     var items = parse(el('body').value);
     el('max').value = info.max || String(effectiveMarks(items).reduce(function(a, m){ return a + m; }, 0) || '');
     save(); languageChanged(); showPics(); check(); refreshPdfName();
+    if(wordBuf) return showWordLayout(wordBuf, { hi:hi }).then(function(){
+      var qs = items.filter(function(i){ return i.kind === 'q'; }).length, note = el('docxnote');
+      note.className = 'hint ok';
+      note.innerHTML = 'Read ' + esc(fname) + ': ' + qs + ' question' + (qs === 1 ? '' : 's') +
+        '. It is shown below as laid out in Word, with every box, table and picture, in the school font with ' +
+        'the school logo and border, and checked (box 4). Press <b>Save the PDF on this computer</b>.' +
+        ' To change a question, edit box 2: the preview then switches to the maker\'s own layout.';
+      whenPicturesReady(function(){
+        var broken = Array.prototype.filter.call(el('wordbody').querySelectorAll('img'), function(i){
+          return !i.naturalWidth; }).length;
+        if(broken){
+          note.innerHTML += '<br><span class="bad">' + broken + ' picture' + (broken === 1 ? ' is' : 's are') +
+            ' in a format a browser cannot show. Save ' + (broken === 1 ? 'it' : 'them') + ' in Word as JPG or PNG ' +
+            '(or untick "Keep my Word layout", upload again and choose the pictures under the paper).</span>';
+          return;
+        }
+        if(el('docxpdf').checked) el('savepdf').click();
+      });
+    }, function(e){
+      if(window.console) console.error(e);
+      document.body.classList.remove('wordmode');
+      var note = el('docxnote');
+      note.className = 'hint bad';
+      note.textContent = 'Read ' + fname + ', but its Word layout could not be shown, so it is laid out below in the ' +
+        'maker\'s own layout. Check that every box and picture is there before saving the PDF.';
+    });
     var qs = items.filter(function(i){ return i.kind === 'q'; }).length;
     var note = el('docxnote');
     note.className = 'hint ok';
@@ -1868,7 +2128,8 @@ function buildFromDocx(files, doc, numDoc, styleDoc, rels, fname){
   });
 }
 function whenPicturesReady(done){
-  var imgs = Array.prototype.slice.call(el('sheet').querySelectorAll('img'));
+  var root = document.body.classList.contains('wordmode') ? el('wordsheet') : el('sheet');
+  var imgs = Array.prototype.slice.call(root.querySelectorAll('img'));
   Promise.all(imgs.map(function(i){ return i.decode ? i.decode().catch(function(){}) : null; }))
     .then(function(){ setTimeout(done, 150); });
 }

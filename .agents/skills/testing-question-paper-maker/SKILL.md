@@ -302,6 +302,19 @@ box, a VML picture and an empty VML rectangle: all must show in the PDF. Also ch
 `#body` (or Sample/Clear) leaves word mode; unticking `#docxkeep` gives the old layout; an `.emf`
 picture warns and skips auto-print; no request leaves localhost.
 
+### Command box (`#cmd`, `#cmdgo`, `#cmdundo`, `#cmdnote`)
+
+Offline rule list `COMMANDS` (regex → action; first match wins, narrow rules before
+`replace … with …`). Input is split on newline/`;`/`then`, and a piece that fails is retried split on
+`,`/`and`. Each run pushes a `snap()` (fields, checks, `#wordbody` HTML) on `UNDO`. Question edits find
+`Q n` in `#body` via `NUM_RE`; a question runs to the next question/section (`qEnd`). In word mode the
+same edit is also made in `#wordbody`: `wordQ(n)` finds the Word paragraph by the first 40 characters of
+the question text (Word may number it itself), answer lines are `.cmdlines > .ansline`; font size sets
+`--wzoom` = chosen pt / `WORDBASE` (the size most of the Word text uses, `wordBaseSize()`), and a
+non-Normal line spacing adds `#wordsheet.wline`. Word-level replace/bold use `wordRe()` (whole words).
+Failures are shown with ✗ (regex `FAIL` in `runCommands`). Harness: `~/wordimp/cmdt.py` (sample paper,
+then `g7.docx` in word mode, PDF to `~/cmdbox/`).
+
 ## Devin Secrets Needed
 
 None — the page is static with no backend, no login and no API keys.

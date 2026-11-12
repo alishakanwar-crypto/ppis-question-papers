@@ -21,7 +21,8 @@ and [JSZip](https://stuk.github.io/jszip/) 3.10.1 (MIT), kept in `vendor/`. Old 
 **Tell the paper maker what to fix** (box 3) takes plain-English commands such as `font size 13`,
 `bigger font`, `line spacing roomy`, `no indent`, `questions not bold`, `Q3 marks 2`,
 `add 4 lines after Q5`, `remove lines from Q2`, `add a gap after Q6`, `delete Q7`, `renumber`,
-`replace colour with color`, `make "not" bold`, `title Unit Test 1`, `fix errors`, `pdf` and `undo`,
+`replace colour with color`, `make "not" bold`, `centre the word "or"`, `align questions left`,
+`fix the cut-off text`, `format the questions properly`, `title Unit Test 1`, `fix errors`, `pdf` and `undo`,
 one per line or joined with "and". They are worked out in the page by fixed rules (no AI service, nothing
 is sent anywhere); anything not understood is listed in red. On a Word paper kept in its own layout the
 change is made to that layout too (sizes scale the whole paper from Word's own body size), so its boxes and

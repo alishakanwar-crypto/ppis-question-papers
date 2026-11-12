@@ -1790,21 +1790,36 @@ function aiSel(o){
   return is.map(function(i){ return AI_PARAS[i]; }).filter(function(p){ return p && p.isConnected; });
 }
 function styleText(ps, text, prop, val){
-  var n = 0;
-  ps.forEach(function(p){ textNodes(p).forEach(function(t){
-    var v = t.nodeValue, k = v.indexOf(text);
-    if(k < 0) return;
-    var frag = document.createDocumentFragment(), last = 0;
-    for(; k > -1; k = v.indexOf(text, last)){
-      frag.appendChild(document.createTextNode(v.slice(last, k)));
-      var sp = document.createElement('span'); sp.textContent = text; sp.style.setProperty(prop, val, 'important');
-      frag.appendChild(sp); n++; last = k + text.length;
+  var want = String(text).replace(/\s+/g, ' ').trim().toLowerCase(), n = 0;
+  if(!want) return 0;
+  ps.forEach(function(p){
+    var nodes = textNodes(p), flat = '', map = [];
+    nodes.forEach(function(t, ni){ var v = t.nodeValue;
+      for(var k = 0; k < v.length; k++){
+        var c = v[k];
+        if(/\s/.test(c)){ if(!flat || flat[flat.length - 1] === ' ') continue; c = ' '; }
+        flat += c.toLowerCase(); map.push([ni, k]);
+      } });
+    var cuts = {}, from = 0, k;
+    while((k = flat.indexOf(want, from)) > -1){
+      var g = {};
+      for(var j = k; j < k + want.length; j++){ var m = map[j], r = g[m[0]] || (g[m[0]] = [m[1], m[1]]); r[1] = m[1]; }
+      Object.keys(g).forEach(function(ni){ (cuts[ni] = cuts[ni] || []).push(g[ni]); });
+      from = k + want.length; n++;
     }
-    frag.appendChild(document.createTextNode(v.slice(last)));
-    t.parentNode.replaceChild(frag, t);
-  }); });
+    Object.keys(cuts).forEach(function(ni){
+      var t = nodes[ni];
+      cuts[ni].sort(function(x, y){ return y[0] - x[0]; }).forEach(function(r){
+        if(r[1] + 1 < t.nodeValue.length) t.splitText(r[1] + 1);
+        var mid = r[0] > 0 ? t.splitText(r[0]) : t, sp = document.createElement('span');
+        mid.parentNode.replaceChild(sp, mid); sp.appendChild(mid);
+        sp.style.setProperty(prop, val, 'important');
+      });
+    });
+  });
   return n;
 }
+
 function aiStyle(o, prop, val){
   var ps = aiSel(o);
   if(o.text){ if(!styleText(ps.length ? ps : wordParas(), String(o.text), prop, val)) return null; return; }

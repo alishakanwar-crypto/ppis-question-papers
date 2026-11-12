@@ -77,7 +77,13 @@
   body.wordmode #sheet{display:none}
   body.wordmode #wordsheet{display:block}
   .whead{min-height:13mm}
-  .whead img{height:10mm;margin:1mm 0 0 -2mm}
+  .whead img{height:10mm;margin:1mm 0 0 -4mm}
+  #wordbody{zoom:var(--wzoom,1)}
+  #wordsheet.wline #wordbody p{line-height:var(--pline) !important}
+  .cmdlines{margin:1mm 0 2mm}
+  .cmdnote{font-size:13px;margin:6px 0 0}
+  .cmdnote .ok{color:#1b6b3a}
+  .cmdnote .bad{color:#a32020}
   #wordbody section.docx{padding:0 !important;margin:0 !important;width:auto !important;min-height:0 !important;
     box-shadow:none !important;background:none !important;display:block}
   #wordbody section.docx *{font-family:var(--pfont) !important}
@@ -86,7 +92,7 @@
   #wordbody p{orphans:2;widows:2}
   #wordbody tr,#wordbody img{page-break-inside:avoid;break-inside:avoid}
   .head{position:relative;text-align:center;min-height:19mm;padding-top:3mm}
-  .head img{position:absolute;left:0;top:1mm;height:10mm}
+  .head img{position:absolute;left:-4mm;top:1mm;height:10mm}
   .head .tl{font-weight:bold;text-decoration:underline}
   .durline{display:flex;justify-content:space-between;font-weight:bold}
   .gi b{display:block;font-weight:bold}
@@ -285,6 +291,22 @@ Write the answers in the space provided.</textarea></div>
       </div>
       <div class="chk"><input type="checkbox" id="boldq" checked>
         <label for="boldq" style="margin:0">Print the question lines in bold (the number and the marks stay bold either way)</label></div>
+
+      <div class="f" style="margin-top:14px"><label for="cmd"><b>Tell the paper maker what to fix</b> (typed in plain English, worked
+        out on this computer: nothing is sent anywhere)</label>
+        <textarea id="cmd" style="min-height:46px" placeholder="e.g. font size 13 and Q3 marks 2"></textarea>
+        <div class="bar" style="margin-top:6px"><button class="btn" id="cmdgo">Do it</button>
+          <button class="btn btn-ghost" id="cmdundo">Undo</button></div>
+        <div id="cmdnote" class="cmdnote"></div>
+        <p class="hint">Examples, one per line or joined with "and":
+          <code>font size 13</code> · <code>bigger font</code> · <code>font Times New Roman</code> ·
+          <code>line spacing roomy</code> · <code>more space between lines</code> · <code>no indent</code> ·
+          <code>questions not bold</code> · <code>hide name line</code> · <code>Q3 marks 2</code> ·
+          <code>Q5 marks 4x1=4</code> · <code>add 4 lines after Q5</code> · <code>remove lines from Q2</code> ·
+          <code>add a gap after Q6</code> · <code>delete Q7</code> · <code>renumber</code> ·
+          <code>replace colour with color</code> · <code>make "not" bold</code> · <code>title Unit Test 1</code> ·
+          <code>max marks 40</code> · <code>fix errors</code> · <code>check</code> · <code>pdf</code> · <code>undo</code>.
+          On a Word paper kept in its own layout, the change is made there too, so its boxes and pictures stay.</p></div>
 
       <h2 style="margin-top:20px">4 &nbsp;Check &amp; print</h2>
       <div class="bar" style="margin-top:0">
@@ -723,6 +745,7 @@ function render(){
     var v = el(p[1]).value;
     if(v) st.setProperty(p[0], v); else st.removeProperty(p[0]);
   });
+  applyWordLook();
 
   var qs = items.filter(function(i){ return i.kind === 'q'; });
   var total = effectiveMarks(items).reduce(function(a,m){ return a + m; }, 0);
@@ -1347,6 +1370,366 @@ el('clear').addEventListener('click', function(){
   el('body').value = ''; save(); render(); el('report').innerHTML = '';
 });
 
+/* ------------------------------------------------------------------ commands */
+/* Plain-English fixes typed by the teacher ("font size 13", "Q3 marks 2",
+   "add 4 lines after Q5"). Worked out here in the page with fixed rules: nothing
+   is sent anywhere. On a Word paper shown in its own layout the change is made
+   to that layout too, so its boxes and pictures stay. */
+var WORDBASE = 0, UNDO = [];
+function wordMode(){ return document.body.classList.contains('wordmode'); }
+function snap(){
+  var d = { f:{}, c:{}, word:wordMode() ? el('wordbody').innerHTML : null };
+  FIELDS.forEach(function(f){ d.f[f] = el(f).value; });
+  CHECKS.forEach(function(f){ d.c[f] = el(f).checked; });
+  return d;
+}
+function restore(d){
+  FIELDS.forEach(function(f){ el(f).value = d.f[f]; });
+  CHECKS.forEach(function(f){ el(f).checked = d.c[f]; });
+  if(d.word !== null && wordMode()) el('wordbody').innerHTML = d.word;
+  save(); render(); showPics(); refreshPdfName();
+}
+function applyWordLook(){
+  var ws = el('wordsheet'), st = ws.style, f = el('font').value, z = parseFloat(el('fsize').value);
+  if(f) st.setProperty('--pfont', f); else st.removeProperty('--pfont');
+  if(z && WORDBASE) st.setProperty('--wzoom', String(Math.round(z / WORDBASE * 1000) / 1000));
+  else st.removeProperty('--wzoom');
+  ws.classList.toggle('wline', el('fline').value !== '1.34');
+  st.setProperty('--pline', el('fline').value);
+}
+/* the size most of the Word paper's text is set in, so "font size 13" can scale it */
+function wordBaseSize(root){
+  var w = {}, best = 0, bestN = 0;
+  Array.prototype.forEach.call(root.querySelectorAll('span,p'), function(e){
+    var n = 0;
+    Array.prototype.forEach.call(e.childNodes, function(c){ if(c.nodeType === 3) n += c.nodeValue.trim().length; });
+    if(!n) return;
+    var pt = Math.round(parseFloat(getComputedStyle(e).fontSize) * 0.75 * 2) / 2;
+    w[pt] = (w[pt] || 0) + n;
+    if(w[pt] > bestN){ bestN = w[pt]; best = pt; }
+  });
+  return best;
+}
+
+function qno(s){ var m = s.match(/^\s*(?:q(?:uestion|n)?|\u092a\u094d\u0930(?:\u0936\u094d\u0928)?)\s*(?:no\.?\s*)?\.?\s*(\d+)\b/i); return m ? +m[1] : 0; }
+var QREF = '(?:q(?:uestion|n)?\\.?\\s*(?:no\\.?\\s*)?|\\u092a\\u094d\\u0930(?:\\u0936\\u094d\\u0928)?\\s*)(\\d+)';
+function bodyLines(){ return el('body').value.split(/\r?\n/); }
+function setBody(lines){ el('body').value = lines.join('\n'); save(); render(); showPics(); }
+function qIndex(lines, n){
+  for(var i = 0; i < lines.length; i++){ var m = lines[i].match(NUM_RE); if(m && +m[1] === n) return i; }
+  return -1;
+}
+/* a question runs to the next question or section heading */
+function qEnd(lines, i){
+  var j = i + 1;
+  while(j < lines.length && !NUM_RE.test(lines[j]) && !SEC_RE.test(lines[j])) j++;
+  while(j - 1 > i && !lines[j - 1].trim()) j--;
+  return j;
+}
+function normMarks(v){
+  v = v.replace(/\s+/g, '').replace(/^[\[(]|[\])]$/g, '').replace(/marks?$/i, '').replace(/\u00d7|\*/g, 'x');
+  return /^\d+(?:\.\d+)?(?:x\d+(?:\.\d+)?)?(?:=\d+(?:\.\d+)?)?$/.test(v) ? '(' + v + ')' : '';
+}
+
+/* --- the same changes on the Word paper as laid out in Word --- */
+function wordRe(w, flags){
+  var r = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp((/^\w/.test(w) ? '\\b' : '') + r + (/\w$/.test(w) ? '\\b' : ''), flags);
+}
+function wText(e){ return e.textContent.replace(/\s+/g, ' ').trim(); }
+function wordParas(){ return Array.prototype.slice.call(el('wordbody').querySelectorAll('p')); }
+/* the Word paragraph of question n, found by its words, since Word may number it itself */
+function wordQ(n){
+  var lines = bodyLines(), i = qIndex(lines, n);
+  if(i < 0) return null;
+  var key = splitMarks(lines[i].match(NUM_RE)[2].replace(/[*~]/g, '')).text.replace(/\s+/g, ' ').trim().slice(0, 40);
+  if(key.length < 3) return null;
+  var ps = wordParas();
+  for(var k = 0; k < ps.length; k++){ if(wText(ps[k]).indexOf(key) > -1) return ps[k]; }
+  return null;
+}
+function wordBlockEnd(n){
+  var p = wordQ(n), next = wordQ(n + 1), last = p;
+  if(!p) return null;
+  for(var s = p.nextElementSibling; s && s !== next && !(next && s.contains(next)) && !SEC_RE.test(wText(s)); s = s.nextElementSibling) last = s;
+  return last;
+}
+function textNodes(root){
+  var out = [], it = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), t;
+  while((t = it.nextNode())) out.push(t);
+  return out;
+}
+function wordReplace(from, to, ci){
+  var n = 0, re = wordRe(from, ci ? 'gi' : 'g');
+  textNodes(el('wordbody')).forEach(function(t){
+    var v = t.nodeValue.replace(re, function(){ n++; return to; });
+    if(v !== t.nodeValue) t.nodeValue = v;
+  });
+  return n;
+}
+function wordBold(word){
+  var n = 0, re = wordRe(word, 'g');
+  textNodes(el('wordbody')).forEach(function(t){
+    if(!re.test(t.nodeValue)) return;
+    re.lastIndex = 0;
+    var frag = document.createDocumentFragment(), last = 0, m, v = t.nodeValue;
+    while((m = re.exec(v))){
+      frag.appendChild(document.createTextNode(v.slice(last, m.index)));
+      var b = document.createElement('b'); b.textContent = m[0]; frag.appendChild(b); n++;
+      last = m.index + m[0].length;
+    }
+    frag.appendChild(document.createTextNode(v.slice(last)));
+    t.parentNode.replaceChild(frag, t);
+  });
+  return n;
+}
+function ruled(k){
+  var d = document.createElement('div'); d.className = 'cmdlines';
+  for(var i = 0; i < k; i++){ var l = document.createElement('div'); l.className = 'ansline'; d.appendChild(l); }
+  return d;
+}
+
+var FONTS = [[/calibri/, ''], [/arial/, 'Arial'], [/times/, 'Times'], [/cambria/, 'Cambria'], [/georgia/, 'Georgia'],
+  [/verdana/, 'Verdana'], [/comic/, 'Comic'], [/nirmala|hindi/, 'Nirmala'], [/noto|serif devanagari/, 'Noto Serif']];
+function pickOption(id, test){
+  var o = Array.prototype.filter.call(el(id).options, test)[0];
+  if(o) el(id).value = o.value;
+  return o;
+}
+function sizeOptions(){ return Array.prototype.map.call(el('fsize').options, function(o){ return o.value; }).filter(Boolean); }
+function setSize(pt){
+  pt = Math.max(8, Math.min(24, Math.round(pt * 2) / 2));
+  var v = pt + 'pt';
+  if(sizeOptions().indexOf(v) < 0){
+    var o = document.createElement('option'); o.value = v; o.textContent = pt + ' pt'; el('fsize').appendChild(o);
+  }
+  el('fsize').value = v;
+  return pt;
+}
+function curSize(){ return parseFloat(el('fsize').value) || (wordMode() && WORDBASE) || (hindi() ? 12.5 : 11.5); }
+var LINE_STEPS = ['1.15', '1.34', '1.5', '1.8'], LINE_NAMES = { '1.15':'tight', '1.34':'normal', '1.5':'roomy (1.5)', '1.8':'double-ish' };
+
+/* each rule: [pattern, action(match) -> message] — first match wins, so the
+   narrow ones come before "replace … with …" */
+var COMMANDS = [
+  [/^undo$/i, function(){
+    if(!UNDO.length) return 'There is nothing to undo.';
+    restore(UNDO.pop()); return 'Undone.';
+  }],
+  [/^(?:make|save|create)?\s*(?:the\s+)?pdf$|^save$/i, function(){ el('savepdf').click(); return 'Opening the Save-as-PDF window.'; }],
+  [/^(?:check|check (?:for )?(?:the )?(?:errors|mistakes|paper))$/i, function(){ check(); return 'Checked: see box 4.'; }],
+  [/^(?:fix|correct)\s+(?:the\s+|all\s+)?(?:mechanical\s+)?(?:errors|mistakes|spacing|punctuation)$/i, function(){
+    autofix(); check();
+    return wordMode() ? 'Fixed the mechanical mistakes in box 2 (the Word layout below is not changed by this; edit box 2 to see the maker\'s layout).' : 'Fixed the mechanical mistakes. See box 4.';
+  }],
+  [/\b(?:font\s*size|text\s*size|size\s+of\s+(?:the\s+)?(?:font|text|letters?)|^size)\s*(?:to|=|:|of|as|is)?\s*(\d+(?:\.\d+)?)\s*(?:pt|points?)?$/i, function(m){
+    var pt = setSize(+m[1]); return 'Font size set to ' + pt + ' pt.';
+  }],
+  [/^(?:default|normal|original)\s+(?:font\s*)?size$|^(?:font\s*)?size\s+(?:to\s+)?(?:default|normal)$/i, function(){
+    el('fsize').value = ''; return 'Font size back to the normal size.';
+  }],
+  [/\b(?:bigger|larger|increase|enlarge)\b.*\b(?:font|text|letters?|writing|size)\b|\b(?:font|text|letters?|writing)\b.*\b(?:bigger|larger)\b/i, function(){
+    var pt = setSize(curSize() + 1); return 'Font size made bigger: ' + pt + ' pt.';
+  }],
+  [/\b(?:smaller|decrease|reduce)\b.*\b(?:font|text|letters?|writing|size)\b|\b(?:font|text|letters?|writing)\b.*\bsmaller\b/i, function(){
+    var pt = setSize(curSize() - 1); return 'Font size made smaller: ' + pt + ' pt.';
+  }],
+  [/\bfont\b|\b(?:use|in)\s+(?:calibri|arial|times|cambria|georgia|verdana|comic|nirmala|noto)/i, function(m, s){
+    for(var i = 0; i < FONTS.length; i++){
+      if(FONTS[i][0].test(s.toLowerCase())){
+        var o = pickOption('font', function(o){ return FONTS[i][1] ? o.textContent.indexOf(FONTS[i][1]) === 0 : o.value === ''; });
+        return 'Font set to ' + o.textContent.replace(/\s*\(.*$/, '') + '.';
+      }
+    }
+    return null;
+  }],
+  [/\b(?:line\s*spacing|line\s*gap|line\s*height|spacing)\b.*?\b(tight|single|normal|roomy|double|1\.15|1\.34|1\.5|1\.8|2)\b/i, function(m){
+    var v = { tight:'1.15', single:'1.15', normal:'1.34', roomy:'1.5', double:'1.8', '2':'1.8' }[m[1].toLowerCase()] || m[1];
+    el('fline').value = v; return 'Line spacing set to ' + LINE_NAMES[v] + '.';
+  }],
+  [/\b(?:more|increase|bigger|wider)\b.*\b(?:space|spacing|gap)\b.*\blines?\b|\b(?:line\s*spacing)\b.*\b(?:more|increase)\b/i, function(){
+    var i = Math.min(LINE_STEPS.length - 1, LINE_STEPS.indexOf(el('fline').value) + 1);
+    el('fline').value = LINE_STEPS[i]; return 'Line spacing set to ' + LINE_NAMES[LINE_STEPS[i]] + '.';
+  }],
+  [/\b(?:less|decrease|reduce|smaller|tighter)\b.*\b(?:space|spacing|gap)\b.*\blines?\b|\b(?:line\s*spacing)\b.*\b(?:less|decrease|reduce)\b/i, function(){
+    var i = Math.max(0, LINE_STEPS.indexOf(el('fline').value) - 1);
+    el('fline').value = LINE_STEPS[i]; return 'Line spacing set to ' + LINE_NAMES[LINE_STEPS[i]] + '.';
+  }],
+  [/\bindent(?:ation)?\b.*?\b(none|no|zero|0|small|normal|wide|very wide|\d+(?:\.\d+)?\s*mm)\b|\bno\s+indent/i, function(m){
+    var k = (m[1] || 'none').toLowerCase().replace(/\s+/g, ' ');
+    var v = { none:'0mm', no:'0mm', zero:'0mm', '0':'0mm', small:'2.5mm', normal:'5mm', wide:'8mm', 'very wide':'12mm' }[k] || k.replace(/\s+/g, '');
+    if(!pickOption('find', function(o){ return o.value === v; })) return null;
+    return 'Indent of parts set to ' + el('find').selectedOptions[0].textContent.toLowerCase() + '.';
+  }],
+  [/\b(?:un\s*bold|not\s+(?:in\s+)?bold|no\s+bold|without\s+bold|plain)\b.*\bquestions?\b|\bquestions?\b.*\b(?:un\s*bold|not\s+(?:in\s+)?bold|plain)\b/i, function(){
+    el('boldq').checked = false; return 'Question lines now print without bold (the number and marks stay bold).';
+  }],
+  [/\bbold\b.*\bquestions?\b|\bquestions?\b.*\bbold\b/i, function(){
+    el('boldq').checked = true; return 'Question lines now print in bold.';
+  }],
+  [/\b(hide|remove|delete|no|without)\b.*\bname\b.*\bline\b/i, function(){ el('showNames').checked = false; return 'The Name / Section line is hidden.'; }],
+  [/\b(show|add|put|print)\b.*\bname\b.*\bline\b/i, function(){ el('showNames').checked = true; return 'The Name / Section line is shown.'; }],
+  [new RegExp('^(?:set|change|make|put|give)?\\s*(?:the\\s+)?(?:marks?\\s+(?:of|for|in)\\s+' + QREF + '|' + QREF + '(?:\'s)?\\s+marks?)\\s*(?:to|=|:|as|is)?\\s*(.+?)\\s*(?:marks?)?$', 'i'), function(m){
+    return setMarks(+(m[1] || m[2]), m[3]);
+  }],
+  [new RegExp('^(?:give|make)\\s+' + QREF + '\\s+(.+?)\\s*marks?$', 'i'), function(m){ return setMarks(+m[1], m[2]); }],
+  [new RegExp('^(?:add|give|put|insert)\\s+(\\d+)\\s+(?:more\\s+)?(?:answer\\s+|ruled\\s+|writing\\s+|blank\\s+)?lines?\\s+(?:after|below|under|for|to|in|at)\\s+(?:the\\s+end\\s+of\\s+)?' + QREF + '$', 'i'), function(m){
+    return addLines(+m[2], +m[1]);
+  }],
+  [new RegExp('^(?:remove|delete|take\\s+out)\\s+(?:the\\s+)?(?:answer\\s+|ruled\\s+)?lines\\s+(?:from|in|after|of|below|under)\\s+' + QREF + '$', 'i'), function(m){
+    return addLines(+m[1], 0);
+  }],
+  [new RegExp('^(?:add|leave|put|insert)\\s+(?:a\\s+|some\\s+)?(?:gap|space|blank\\s+line)\\s+(?:after|below|under)\\s+' + QREF + '$', 'i'), function(m){
+    var n = +m[1], lines = bodyLines(), i = qIndex(lines, n);
+    if(i < 0) return 'There is no Q' + n + ' in box 2.';
+    var e = qEnd(lines, i); lines.splice(e, 0, ''); setBody(lines);
+    if(wordMode()){ var last = wordBlockEnd(n); if(!last) return 'Added a gap after Q' + n + ' in box 2, but could not find Q' + n + ' in the Word layout.';
+      var g = document.createElement('div'); g.style.height = '6mm'; last.parentNode.insertBefore(g, last.nextSibling); }
+    return 'Added a gap after Q' + n + '.';
+  }],
+  [new RegExp('^(?:delete|remove|drop|take\\s+out)\\s+(?:the\\s+(?:whole\\s+)?)?' + QREF + '$', 'i'), function(m){
+    var n = +m[1], lines = bodyLines(), i = qIndex(lines, n);
+    if(i < 0) return 'There is no Q' + n + ' in box 2.';
+    if(wordMode()){
+      var p = wordQ(n), last = wordBlockEnd(n);
+      if(!p) return 'Could not find Q' + n + ' in the Word layout, so nothing was deleted.';
+      for(var s = p, nx; s; s = nx){ nx = s === last ? null : s.nextElementSibling; s.remove(); }
+    }
+    var e = qEnd(lines, i); while(e < lines.length && !lines[e].trim()) e++;
+    lines.splice(i, e - i); setBody(lines);
+    return 'Deleted Q' + n + '. Type "renumber" to number the questions 1, 2, 3 … again.';
+  }],
+  [/^renumber(?:\s+(?:the\s+)?questions)?$|^number\s+(?:the\s+)?questions\s+again$/i, function(){
+    var lines = bodyLines(), k = 0, map = [], hadWord = wordMode();
+    var wq = hadWord ? [] : null;
+    lines.forEach(function(l, i){ var m = l.match(NUM_RE); if(m){ map.push([+m[1], ++k]); if(hadWord) wq.push(wordQ(+m[1])); } });
+    lines = lines.map(function(l){
+      var m = l.match(NUM_RE); if(!m) return l;
+      var to = map.shift()[1];
+      return l.replace(/(\d+)/, String(to));
+    });
+    setBody(lines);
+    if(hadWord) wq.forEach(function(p, i){
+      if(!p) return;
+      var t = textNodes(p).filter(function(x){ return x.nodeValue.trim(); })[0];
+      if(t && /^\s*(?:Q|\u092a\u094d\u0930)?\s*\.?\s*\d+\s*[.)]/i.test(t.nodeValue)) t.nodeValue = t.nodeValue.replace(/\d+/, String(i + 1));
+    });
+    return 'Questions numbered 1 to ' + k + '.';
+  }],
+  [/^(?:make|put|set)\s+["\u201c\u2018']?(.+?)["\u201d\u2019']?\s+(?:in\s+)?bold$|^bold\s+(?:the\s+word\s+|the\s+words\s+)?["\u201c\u2018'](.+?)["\u201d\u2019']$/i, function(m){
+    var word = m[1] || m[2], lines = bodyLines(), n = 0;
+    var re = wordRe(word, 'g');
+    lines = lines.map(function(l){ return l.replace(re, function(w, at, all){
+      if(all.charAt(at - 1) === '*' && all.charAt(at + w.length) === '*') return w;
+      n++; return '*' + w + '*'; }); });
+    var wn = wordMode() ? wordBold(word) : 0;
+    if(!n && !wn) return 'Could not find "' + word + '" in the paper.';
+    setBody(lines);
+    return '"' + word + '" is now bold (' + Math.max(n, wn) + ' place' + (Math.max(n, wn) === 1 ? '' : 's') + ').';
+  }],
+  [/^(?:set|change|make|put)?\s*(?:the\s+)?(title|grade|class|subject|duration|time|time\s+allowed|max(?:imum)?\.?\s*marks|total\s*marks|session|academic\s+session)(?:\s*(?:\bto\b|=|:|\bis\b|\bas\b)\s*|\s+)(.+)$/i, function(m){
+    var k = m[1].toLowerCase().replace(/\s+/g, ' ');
+    var f = /title/.test(k) ? 'title' : /grade|class/.test(k) ? 'grade' : /subject/.test(k) ? 'subject' :
+            /time|duration/.test(k) ? 'duration' : /marks/.test(k) ? 'max' : 'session';
+    var v = m[2].trim().replace(/^["\u201c\u2018']|["\u201d\u2019']$/g, '');
+    el(f).value = v; refreshPdfName();
+    if(wordMode()) return 'Box 1 now says ' + k + ' "' + v + '". It is used for the PDF name and the checker; the Word layout keeps the header as typed in Word.';
+    return 'The ' + k + ' is now "' + v + '".';
+  }],
+  [/^(?:replace|change|correct|spell|make)\s+["\u201c\u2018']?(.+?)["\u201d\u2019']?\s+(?:with|to|by|into|as)\s+["\u201c\u2018']?(.+?)["\u201d\u2019']?$/i, function(m){
+    var from = m[1], to = m[2], n = 0, ci = false;
+    var count = function(s, flags){ return (s.match(wordRe(from, flags)) || []).length; };
+    var all = el('body').value + '\n' + el('instr').value;
+    if(!count(all, 'g') && count(all, 'gi')) ci = true;
+    var re = wordRe(from, ci ? 'gi' : 'g');
+    ['body', 'instr'].forEach(function(f){
+      el(f).value = el(f).value.replace(re, function(){ n++; return to; });
+    });
+    var wn = wordMode() ? wordReplace(from, to, ci) : 0;
+    if(!n && !wn) return 'Could not find "' + from + '" in the paper.';
+    save(); render(); showPics();
+    return 'Changed "' + from + '" to "' + to + '" (' + Math.max(n, wn) + ' place' + (Math.max(n, wn) === 1 ? '' : 's') + ').';
+  }]
+];
+
+function setMarks(n, raw){
+  var v = normMarks(raw);
+  if(!v) return null;
+  var lines = bodyLines(), i = qIndex(lines, n);
+  if(i < 0) return 'There is no Q' + n + ' in box 2.';
+  var s = lines[i].replace(/\s+$/, ''), mm = s.match(MARK_RE);
+  lines[i] = mm ? s.slice(0, mm.index).replace(/\s+$/, '') + ' ' + v : s + ' ' + v;
+  setBody(lines);
+  if(wordMode()){
+    var p = wordQ(n);
+    if(!p) return 'Q' + n + ' marks set to ' + v + ' in box 2, but Q' + n + ' was not found in the Word layout.';
+    var ts = textNodes(p).filter(function(t){ return t.nodeValue.trim(); }), last = ts[ts.length - 1];
+    if(last && /[\[(]\s*[\d.x\u00d7*=\s]+\s*(?:marks?)?\s*[\])]\s*$/i.test(last.nodeValue))
+      last.nodeValue = last.nodeValue.replace(/[\[(]\s*[\d.x\u00d7*=\s]+\s*(?:marks?)?\s*[\])]\s*$/i, v);
+    else { var b = document.createElement('b'); b.textContent = ' ' + v; b.style.float = 'right';
+      if(last) b.style.fontSize = getComputedStyle(last.parentNode).fontSize; p.appendChild(b); }
+  }
+  return 'Q' + n + ' marks set to ' + v + '.';
+}
+/* k = 0 takes the answer lines away */
+function addLines(n, k){
+  var lines = bodyLines(), i = qIndex(lines, n);
+  if(i < 0) return 'There is no Q' + n + ' in box 2.';
+  var e = qEnd(lines, i), had = -1;
+  for(var j = i + 1; j < e; j++) if(LINES_RE.test(lines[j])) had = j;
+  if(k){ if(had > -1) lines[had] = 'LINES: ' + k; else lines.splice(e, 0, 'LINES: ' + k); }
+  else { if(had < 0 && !wordMode()) return 'Q' + n + ' has no answer lines.';
+    lines = lines.filter(function(l, j){ return !(j > i && j < e && LINES_RE.test(l)); }); }
+  setBody(lines);
+  if(wordMode()){
+    var p = wordQ(n), last = wordBlockEnd(n);
+    if(!p) return 'Changed box 2, but Q' + n + ' was not found in the Word layout.';
+    var old = [];
+    for(var s = p.nextElementSibling; s; s = s.nextElementSibling){ if(s.classList.contains('cmdlines')) old.push(s); if(s === last) break; }
+    old.forEach(function(x){ if(x === last) last = x.previousElementSibling; x.remove(); });
+    if(k) last.parentNode.insertBefore(ruled(k), last.nextSibling);
+  }
+  return k ? k + ' answer line' + (k === 1 ? '' : 's') + ' under Q' + n + '.' : 'Answer lines taken away from Q' + n + '.';
+}
+
+function runOne(s){
+  s = s.trim().replace(/[.!]+$/, '').replace(/^(?:please|pls|plz|kindly)\s+/i, '');
+  if(!s) return null;
+  for(var i = 0; i < COMMANDS.length; i++){
+    var m = s.match(COMMANDS[i][0]);
+    if(m){ var r = COMMANDS[i][1](m, s); if(r) return r; }
+  }
+  return null;
+}
+function runCommands(){
+  var src = el('cmd').value, out = [], miss = [];
+  if(!src.trim()) return;
+  var before = snap();
+  src.split(/\s*(?:\n|;|\bthen\b)\s*/i).forEach(function(part){
+    if(!part.trim()) return;
+    var r = runOne(part);
+    if(r === null && /,|\band\b/i.test(part)){
+      var bits = part.split(/\s*,\s*(?:and\s+)?|\s+and\s+/i), rs = bits.map(runOne);
+      if(rs.every(function(x){ return x !== null; })){ out = out.concat(rs); return; }
+    }
+    if(r === null) miss.push(part.trim()); else out.push(r);
+  });
+  if(!/^undo$/i.test(src.trim())) UNDO.push(before);
+  if(UNDO.length > 30) UNDO.shift();
+  save(); render(); applyWordLook();
+  var FAIL = /^(?:could not|there is no|there is nothing)|has no answer lines|was not found|could not find/i;
+  var h = out.map(function(x){ return FAIL.test(x) ? '<div class="bad">\u2717 ' + esc(x) + '</div>' :
+    '<div class="ok">\u2713 ' + esc(x) + '</div>'; }).join('');
+  if(miss.length) h += '<div class="bad">Not understood: ' + miss.map(function(x){ return '\u201c' + esc(x) + '\u201d'; }).join(', ') +
+    '. Try one of the examples below, or change it in boxes 1\u20133.</div>';
+  el('cmdnote').innerHTML = h;
+  if(out.length && !miss.length) el('cmd').value = '';
+}
+el('cmdgo').addEventListener('click', runCommands);
+el('cmdundo').addEventListener('click', function(){ el('cmd').value = 'undo'; runCommands(); });
+el('cmd').addEventListener('keydown', function(e){ if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); runCommands(); } });
+['font', 'fsize', 'fline'].forEach(function(f){ el(f).addEventListener('input', applyWordLook); });
+
 /* ------------------------------------------------------------------ Word upload */
 /* A .docx is a zip of XML files. It is opened here with the browser's own
    decompressor, so the paper never leaves this computer, and turned into the
@@ -1865,6 +2248,8 @@ function showWordLayout(buf, info){
     }
     el('wordsheet').classList.toggle('hi', info.hi);
     document.body.classList.add('wordmode');
+    WORDBASE = wordBaseSize(body); UNDO = []; el('cmdnote').innerHTML = '';
+    applyWordLook();
   });
 }
 function leaveWordLayout(){

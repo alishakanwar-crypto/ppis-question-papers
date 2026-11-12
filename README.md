@@ -17,3 +17,12 @@ lines (`Q1.`, `a.`, `(a) … (b) …`, `MATCH:`, `BOX:`, `TABLE:`, `FRAME:`, `LI
 out in the maker's format; editing box 2 after an upload also switches to that layout. The Word
 layout is drawn with [docx-preview](https://github.com/VolodymyrBaydalka/docxjs) 0.3.6 (Apache-2.0)
 and [JSZip](https://stuk.github.io/jszip/) 3.10.1 (MIT), kept in `vendor/`. Old `.doc` files must first be saved as `.docx` in Word.
+
+**Tell the paper maker what to fix** (box 3) takes plain-English commands such as `font size 13`,
+`bigger font`, `line spacing roomy`, `no indent`, `questions not bold`, `Q3 marks 2`,
+`add 4 lines after Q5`, `remove lines from Q2`, `add a gap after Q6`, `delete Q7`, `renumber`,
+`replace colour with color`, `make "not" bold`, `title Unit Test 1`, `fix errors`, `pdf` and `undo`,
+one per line or joined with "and". They are worked out in the page by fixed rules (no AI service, nothing
+is sent anywhere); anything not understood is listed in red. On a Word paper kept in its own layout the
+change is made to that layout too (sizes scale the whole paper from Word's own body size), so its boxes and
+pictures stay.

@@ -1811,7 +1811,7 @@ function styleText(ps, text, prop, val){
       var t = nodes[ni];
       cuts[ni].sort(function(x, y){ return y[0] - x[0]; }).forEach(function(r){
         if(r[1] + 1 < t.nodeValue.length) t.splitText(r[1] + 1);
-        var mid = r[0] > 0 ? t.splitText(r[0]) : t, sp = document.createElement('span');
+        var mid = r[0] > 0 ? t.splitText(r[0]) : t, sp = document.createElement('qp-s');
         mid.parentNode.replaceChild(sp, mid); sp.appendChild(mid);
         sp.style.setProperty(prop, val, 'important');
       });

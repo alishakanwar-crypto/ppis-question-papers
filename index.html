@@ -1789,6 +1789,28 @@ function aiSel(o){
   var is = Array.isArray(o.is) ? o.is : (o.i !== undefined ? [o.i] : []);
   return is.map(function(i){ return AI_PARAS[i]; }).filter(function(p){ return p && p.isConnected; });
 }
+function styleText(ps, text, prop, val){
+  var n = 0;
+  ps.forEach(function(p){ textNodes(p).forEach(function(t){
+    var v = t.nodeValue, k = v.indexOf(text);
+    if(k < 0) return;
+    var frag = document.createDocumentFragment(), last = 0;
+    for(; k > -1; k = v.indexOf(text, last)){
+      frag.appendChild(document.createTextNode(v.slice(last, k)));
+      var sp = document.createElement('span'); sp.textContent = text; sp.style.setProperty(prop, val, 'important');
+      frag.appendChild(sp); n++; last = k + text.length;
+    }
+    frag.appendChild(document.createTextNode(v.slice(last)));
+    t.parentNode.replaceChild(frag, t);
+  }); });
+  return n;
+}
+function aiStyle(o, prop, val){
+  var ps = aiSel(o);
+  if(o.text){ if(!styleText(ps.length ? ps : wordParas(), String(o.text), prop, val)) return null; return; }
+  if(!ps.length) return null;
+  ps.forEach(function(p){ deepStyle(p, prop, val); });
+}
 function deepStyle(p, prop, val){
   [p].concat(Array.prototype.slice.call(p.querySelectorAll('span,b,strong,i,em,u,a'))).forEach(function(e){ e.style.setProperty(prop, val, 'important'); });
 }
@@ -1796,11 +1818,12 @@ var AI_OPS = {
   run:function(o){ var r = runOne(String(o.command || '')); return r === null ? null : r; },
   align:function(o){ var how = {centre:'center', middle:'center'}[o.how] || o.how;
     if(!ALIGN_NAME[how]) return null; alignParas(aiSel(o), how); },
-  bold:function(o){ aiSel(o).forEach(function(p){ deepStyle(p, 'font-weight', o.on === false ? 'normal' : 'bold'); }); },
-  italic:function(o){ aiSel(o).forEach(function(p){ deepStyle(p, 'font-style', o.on === false ? 'normal' : 'italic'); }); },
-  underline:function(o){ aiSel(o).forEach(function(p){ deepStyle(p, 'text-decoration', o.on === false ? 'none' : 'underline'); }); },
+  bold:function(o){ return aiStyle(o, 'font-weight', o.on === false ? 'normal' : 'bold'); },
+  italic:function(o){ return aiStyle(o, 'font-style', o.on === false ? 'normal' : 'italic'); },
+  underline:function(o){ return aiStyle(o, 'text-decoration', o.on === false ? 'none' : 'underline'); },
   size:function(o){ var pt = parseFloat(o.pt); if(!(pt > 4 && pt < 40)) return null;
-    aiSel(o).forEach(function(p){ deepStyle(p, 'font-size', pt + 'pt'); }); },
+    var z = parseFloat(getComputedStyle(el('wordbody')).getPropertyValue('--wzoom')) || 1;
+    return aiStyle(o, 'font-size', Math.round(pt / z * 100) / 100 + 'pt'); },
   indent:function(o){ var mm = parseFloat(o.mm) || 0; if(mm < 0 || mm > 60) return null;
     aiSel(o).forEach(function(p){ p.style.setProperty('margin-left', mm + 'mm', 'important'); p.style.setProperty('text-indent', '0', 'important'); }); },
   space:function(o){ aiSel(o).forEach(function(p){
@@ -1818,8 +1841,9 @@ var AI_OPS = {
     var ts = textNodes(p); if(!ts.length){ p.textContent = String(o.text || ''); return; }
     ts[0].nodeValue = String(o.text || ''); ts.slice(1).forEach(function(t){ t.nodeValue = ''; }); },
   insert_after:function(o){ var p = aiSel(o)[0]; if(!p) return null;
-    var after = p, n = Math.min(parseInt(o.lines, 10) || 0, 30);
-    if(o.text){ var q = p.cloneNode(false); q.removeAttribute('id'); q.textContent = String(o.text); p.parentNode.insertBefore(q, p.nextSibling); after = q; }
+    var after = p, n = Math.min(parseInt(o.lines, 10) || 0, 30), blank = /^[\s_.\-]*$/.test(String(o.text || ''));
+    if(blank && o.text && !n) n = 1;
+    if(!blank){ var q = p.cloneNode(false); q.removeAttribute('id'); q.textContent = String(o.text); p.parentNode.insertBefore(q, p.nextSibling); after = q; }
     if(n) after.parentNode.insertBefore(ruled(n), after.nextSibling); },
   'delete':function(o){ var ps = aiSel(o); if(ps.some(function(p){ return p.querySelector('img,svg'); })) return null;
     ps.forEach(function(p){ p.remove(); }); },
@@ -1851,7 +1875,8 @@ function runOne(s){
   return null;
 }
 function runCommands(){
-  var src = el('cmd').value, out = [], miss = [];
+  var src = el('cmd').value, out = [], miss = [], todo = [];
+  var FAIL = /^(?:could not|there is no|there is nothing)|has no answer lines|was not found|could not find|works on a Word paper/i;
   if(!src.trim()) return;
   var before = snap();
   src.split(/\s*(?:\n|;|\bthen\b)\s*/i).forEach(function(part){
@@ -1860,17 +1885,16 @@ function runCommands(){
     if(r === null && /,|\band\b/i.test(part)){
       var bits = part.split(/\s*,\s*(?:and\s+)?|\s+and\s+/i).filter(function(b){ return b.trim(); }), rs = bits.map(runOne);
       if(rs.some(function(x){ return x !== null; })){
-        rs.forEach(function(x, k){ if(x === null) miss.push(bits[k].trim()); else out.push(x); });
+        rs.forEach(function(x, k){ if(x === null) miss.push(bits[k].trim()); else { out.push(x); if(FAIL.test(x)) todo.push(bits[k].trim()); } });
         return;
       }
       if(/,/.test(part)) r = runOne(part);
     }
-    if(r === null) miss.push(part.trim()); else out.push(r);
+    if(r === null) miss.push(part.trim()); else { out.push(r); if(FAIL.test(r)) todo.push(part.trim()); }
   });
   if(!/^undo$/i.test(src.trim())) UNDO.push(before);
   if(UNDO.length > 30) UNDO.shift();
   save(); render(); applyWordLook();
-  var FAIL = /^(?:could not|there is no|there is nothing)|has no answer lines|was not found|could not find|works on a Word paper/i;
   var line = function(x){ return FAIL.test(x) ? '<div class="bad">\u2717 ' + esc(x) + '</div>' : '<div class="ok">\u2713 ' + esc(x) + '</div>'; };
   var failed = out.filter(function(x){ return FAIL.test(x); });
   var notUnderstood = function(lead){ return miss.length ? '<div class="bad">' + lead + miss.map(function(x){ return '\u201c' + esc(x) + '\u201d'; }).join(', ') +
@@ -1883,7 +1907,7 @@ function runCommands(){
   var h = out.filter(function(x){ return !FAIL.test(x); }).map(line).join('');
   el('cmdnote').innerHTML = h + '<div>Asking ChatGPT\u2026</div>';
   el('cmdgo').disabled = true;
-  askAi(failed.length ? src : miss.join('; ')).then(function(res){
+  askAi(miss.concat(todo).join('; ')).then(function(res){
     var r = applyAi(res), ops = res.ops || [];
     save(); render(); applyWordLook();
     var g = h + r.msgs.map(line).join('');

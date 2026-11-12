@@ -293,11 +293,13 @@ Write the answers in the space provided.</textarea></div>
       <div class="chk"><input type="checkbox" id="boldq" checked>
         <label for="boldq" style="margin:0">Print the question lines in bold (the number and the marks stay bold either way)</label></div>
 
-      <div class="f" style="margin-top:14px"><label for="cmd"><b>Tell the paper maker what to fix</b> (typed in plain English, worked
-        out on this computer: nothing is sent anywhere)</label>
+      <div class="f" style="margin-top:14px"><label for="cmd"><b>Tell the paper maker what to fix</b> (type it in plain English, Hindi or Hinglish)</label>
         <textarea id="cmd" style="min-height:46px" placeholder="e.g. font size 13 and Q3 marks 2"></textarea>
         <div class="bar" style="margin-top:6px"><button class="btn" id="cmdgo">Do it</button>
           <button class="btn btn-ghost" id="cmdundo">Undo</button></div>
+        <div class="chk" style="margin-top:6px"><input type="checkbox" id="cmdai" checked>
+          <label for="cmdai" style="margin:0">Use ChatGPT for commands the box doesn't know (sends the paper's text and the
+            command, never the Word file or pictures)</label></div>
         <div id="cmdnote" class="cmdnote"></div>
         <p class="hint">Examples, one per line or joined with "and" or commas:
           <code>font size 13</code> · <code>bigger font</code> · <code>font Times New Roman</code> ·
@@ -1766,6 +1768,118 @@ function addLines(n, k){
   return k ? k + ' answer line' + (k === 1 ? '' : 's') + ' under Q' + n + '.' : 'Answer lines taken away from Q' + n + '.';
 }
 
+/* Commands the rules above don't know go to ChatGPT through the school server, which
+   holds the key. Only the paper's text and the command are sent; the reply is a list of
+   edits from AI_OPS, so the Word layout's boxes, tables and pictures are never rebuilt. */
+var AI_URL = 'https://ppis-whatsapp-bot.fly.dev/api/qp/ai-fix', AI_PARAS = [];
+function aiPayload(cmd){
+  var word = wordMode(), meta = {};
+  ['title','grade','subject','duration','max','session','instr'].forEach(function(f){ meta[f] = el(f).value; });
+  AI_PARAS = word ? wordParas() : [];
+  return { command:cmd, mode:word ? 'word' : 'maker', body:el('body').value, meta:meta,
+    settings:{ font:el('font').value || 'Calibri', size:el('fsize').value || 'default', line:el('fline').value,
+      indent:el('find').value, boldQuestions:el('boldq').checked },
+    paragraphs:AI_PARAS.map(function(p, i){
+      var cs = getComputedStyle(p);
+      return { i:i, t:wText(p), a:cs.textAlign, b:parseInt(cs.fontWeight, 10) >= 600 || !!p.querySelector('b,strong'),
+        tbl:!!p.closest('td,th'), pic:!!p.querySelector('img,svg') };
+    }) };
+}
+function aiSel(o){
+  var is = Array.isArray(o.is) ? o.is : (o.i !== undefined ? [o.i] : []);
+  return is.map(function(i){ return AI_PARAS[i]; }).filter(function(p){ return p && p.isConnected; });
+}
+function styleText(ps, text, prop, val){
+  var want = String(text).replace(/\s+/g, ' ').trim().toLowerCase(), n = 0;
+  if(!want) return 0;
+  ps.forEach(function(p){
+    var nodes = textNodes(p), flat = '', map = [];
+    nodes.forEach(function(t, ni){ var v = t.nodeValue;
+      for(var k = 0; k < v.length; k++){
+        var c = v[k];
+        if(/\s/.test(c)){ if(!flat || flat[flat.length - 1] === ' ') continue; c = ' '; }
+        flat += c.toLowerCase(); map.push([ni, k]);
+      } });
+    var cuts = {}, from = 0, k;
+    while((k = flat.indexOf(want, from)) > -1){
+      var g = {};
+      for(var j = k; j < k + want.length; j++){ var m = map[j], r = g[m[0]] || (g[m[0]] = [m[1], m[1]]); r[1] = m[1]; }
+      Object.keys(g).forEach(function(ni){ (cuts[ni] = cuts[ni] || []).push(g[ni]); });
+      from = k + want.length; n++;
+    }
+    Object.keys(cuts).forEach(function(ni){
+      var t = nodes[ni];
+      cuts[ni].sort(function(x, y){ return y[0] - x[0]; }).forEach(function(r){
+        if(r[1] + 1 < t.nodeValue.length) t.splitText(r[1] + 1);
+        var mid = r[0] > 0 ? t.splitText(r[0]) : t, sp = document.createElement('qp-s');
+        mid.parentNode.replaceChild(sp, mid); sp.appendChild(mid);
+        sp.style.setProperty(prop, val, 'important');
+      });
+    });
+  });
+  return n;
+}
+
+function aiStyle(o, prop, val){
+  var ps = aiSel(o);
+  if(o.text){ if(!styleText(ps.length ? ps : wordParas(), String(o.text), prop, val)) return null; return; }
+  if(!ps.length) return null;
+  ps.forEach(function(p){ deepStyle(p, prop, val); });
+}
+function deepStyle(p, prop, val){
+  [p].concat(Array.prototype.slice.call(p.querySelectorAll('span,b,strong,i,em,u,a'))).forEach(function(e){ e.style.setProperty(prop, val, 'important'); });
+}
+var AI_OPS = {
+  run:function(o){ var r = runOne(String(o.command || '')); return r === null ? null : r; },
+  align:function(o){ var how = {centre:'center', middle:'center'}[o.how] || o.how;
+    if(!ALIGN_NAME[how]) return null; alignParas(aiSel(o), how); },
+  bold:function(o){ return aiStyle(o, 'font-weight', o.on === false ? 'normal' : 'bold'); },
+  italic:function(o){ return aiStyle(o, 'font-style', o.on === false ? 'normal' : 'italic'); },
+  underline:function(o){ return aiStyle(o, 'text-decoration', o.on === false ? 'none' : 'underline'); },
+  size:function(o){ var pt = parseFloat(o.pt); if(!(pt > 4 && pt < 40)) return null;
+    var z = parseFloat(getComputedStyle(el('wordbody')).getPropertyValue('--wzoom')) || 1;
+    return aiStyle(o, 'font-size', Math.round(pt / z * 100) / 100 + 'pt'); },
+  indent:function(o){ var mm = parseFloat(o.mm) || 0; if(mm < 0 || mm > 60) return null;
+    aiSel(o).forEach(function(p){ p.style.setProperty('margin-left', mm + 'mm', 'important'); p.style.setProperty('text-indent', '0', 'important'); }); },
+  space:function(o){ aiSel(o).forEach(function(p){
+    if(o.before_mm !== undefined) p.style.setProperty('margin-top', (parseFloat(o.before_mm) || 0) + 'mm', 'important');
+    if(o.after_mm !== undefined) p.style.setProperty('margin-bottom', (parseFloat(o.after_mm) || 0) + 'mm', 'important'); }); },
+  replace:function(o){
+    var from = String(o.find || ''), to = String(o['with'] === undefined ? '' : o['with']);
+    if(!from) return null;
+    if(!wordMode()){ var b = el('body').value; if(b.indexOf(from) < 0) return null; el('body').value = b.split(from).join(to); return; }
+    var roots = aiSel(o), n = 0; if(!roots.length) roots = [el('wordbody')];
+    roots.forEach(function(r){ textNodes(r).forEach(function(t){ if(t.nodeValue.indexOf(from) > -1){ n++; t.nodeValue = t.nodeValue.split(from).join(to); } }); });
+    if(!n) return null;
+  },
+  set_text:function(o){ var p = aiSel(o)[0]; if(!p || p.querySelector('img,svg,table')) return null;
+    var ts = textNodes(p); if(!ts.length){ p.textContent = String(o.text || ''); return; }
+    ts[0].nodeValue = String(o.text || ''); ts.slice(1).forEach(function(t){ t.nodeValue = ''; }); },
+  insert_after:function(o){ var p = aiSel(o)[0]; if(!p) return null;
+    var after = p, n = Math.min(parseInt(o.lines, 10) || 0, 30), blank = /^[\s_.\-]*$/.test(String(o.text || ''));
+    if(blank && o.text && !n) n = 1;
+    if(!blank){ var q = p.cloneNode(false); q.removeAttribute('id'); q.textContent = String(o.text); p.parentNode.insertBefore(q, p.nextSibling); after = q; }
+    if(n) after.parentNode.insertBefore(ruled(n), after.nextSibling); },
+  'delete':function(o){ var ps = aiSel(o); if(ps.some(function(p){ return p.querySelector('img,svg'); })) return null;
+    ps.forEach(function(p){ p.remove(); }); },
+  page_break_before:function(o){ aiSel(o).forEach(function(p){ p.style.setProperty('break-before', 'page', 'important'); p.style.setProperty('page-break-before', 'always', 'important'); }); },
+  set_body:function(o){ if(wordMode() || typeof o.text !== 'string' || !o.text.trim()) return null; el('body').value = o.text; }
+};
+var AI_WORD_ONLY = /^(?:align|bold|italic|underline|size|indent|space|set_text|insert_after|delete|page_break_before)$/;
+function applyAi(res){
+  var msgs = [], bad = 0;
+  (res.ops || []).forEach(function(o){
+    var f = AI_OPS.hasOwnProperty(o.op) ? AI_OPS[o.op] : null, r = null;
+    if(f && !(AI_WORD_ONLY.test(o.op) && !wordMode())){ try { r = f(o); } catch(e){ r = null; } }
+    if(r === null) bad++; else if(typeof r === 'string') msgs.push(r);
+  });
+  return { msgs:msgs, bad:bad };
+}
+function askAi(cmd){
+  return fetch(AI_URL, { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(aiPayload(cmd)) })
+    .then(function(r){ return r.json().then(function(j){ if(!r.ok) throw new Error(j.error || 'ChatGPT could not be reached.'); return j; }); });
+}
+
 function runOne(s){
   s = s.trim().replace(/[.!]+$/, '').replace(/^(?:please|pls|plz|kindly)\s+/i, '');
   if(!s) return null;
@@ -1776,7 +1890,8 @@ function runOne(s){
   return null;
 }
 function runCommands(){
-  var src = el('cmd').value, out = [], miss = [];
+  var src = el('cmd').value, out = [], miss = [], todo = [];
+  var FAIL = /^(?:could not|there is no|there is nothing)|has no answer lines|was not found|could not find|works on a Word paper/i;
   if(!src.trim()) return;
   var before = snap();
   src.split(/\s*(?:\n|;|\bthen\b)\s*/i).forEach(function(part){
@@ -1785,23 +1900,43 @@ function runCommands(){
     if(r === null && /,|\band\b/i.test(part)){
       var bits = part.split(/\s*,\s*(?:and\s+)?|\s+and\s+/i).filter(function(b){ return b.trim(); }), rs = bits.map(runOne);
       if(rs.some(function(x){ return x !== null; })){
-        rs.forEach(function(x, k){ if(x === null) miss.push(bits[k].trim()); else out.push(x); });
+        rs.forEach(function(x, k){ if(x === null) miss.push(bits[k].trim()); else { out.push(x); if(FAIL.test(x)) todo.push(bits[k].trim()); } });
         return;
       }
       if(/,/.test(part)) r = runOne(part);
     }
-    if(r === null) miss.push(part.trim()); else out.push(r);
+    if(r === null) miss.push(part.trim()); else { out.push(r); if(FAIL.test(r)) todo.push(part.trim()); }
   });
   if(!/^undo$/i.test(src.trim())) UNDO.push(before);
   if(UNDO.length > 30) UNDO.shift();
   save(); render(); applyWordLook();
-  var FAIL = /^(?:could not|there is no|there is nothing)|has no answer lines|was not found|could not find|works on a Word paper/i;
-  var h = out.map(function(x){ return FAIL.test(x) ? '<div class="bad">\u2717 ' + esc(x) + '</div>' :
-    '<div class="ok">\u2713 ' + esc(x) + '</div>'; }).join('');
-  if(miss.length) h += '<div class="bad">Not understood: ' + miss.map(function(x){ return '\u201c' + esc(x) + '\u201d'; }).join(', ') +
-    '. Try one of the examples below, or change it in boxes 1\u20133.</div>';
-  el('cmdnote').innerHTML = h;
-  if(out.length && !miss.length) el('cmd').value = '';
+  var line = function(x){ return FAIL.test(x) ? '<div class="bad">\u2717 ' + esc(x) + '</div>' : '<div class="ok">\u2713 ' + esc(x) + '</div>'; };
+  var failed = out.filter(function(x){ return FAIL.test(x); });
+  var notUnderstood = function(lead){ return miss.length ? '<div class="bad">' + lead + miss.map(function(x){ return '\u201c' + esc(x) + '\u201d'; }).join(', ') +
+    '. Try one of the examples below, or change it in boxes 1\u20133.</div>' : ''; };
+  if(!el('cmdai').checked || /^undo$/i.test(src.trim()) || !(miss.length || failed.length)){
+    el('cmdnote').innerHTML = out.map(line).join('') + notUnderstood('Not understood: ');
+    if(out.length && !miss.length) el('cmd').value = '';
+    return;
+  }
+  var h = out.filter(function(x){ return !FAIL.test(x); }).map(line).join('');
+  el('cmdnote').innerHTML = h + '<div>Asking ChatGPT\u2026</div>';
+  el('cmdgo').disabled = true;
+  askAi(miss.concat(todo).join('; ')).then(function(res){
+    var r = applyAi(res), ops = res.ops || [];
+    save(); render(); applyWordLook();
+    var g = h + r.msgs.map(line).join('');
+    if(res.message && ops.length > r.bad) g += '<div class="ok">\u2713 ChatGPT: ' + esc(res.message) + '</div>';
+    if(res.cannot) g += '<div class="bad">\u2717 ' + esc(res.cannot) + '</div>';
+    if(r.bad) g += '<div class="bad">\u2717 ' + (r.bad === ops.length ? 'ChatGPT\u2019s changes' : r.bad + ' of ChatGPT\u2019s ' + ops.length + ' changes') + ' could not be made on this paper.</div>';
+    if(!ops.length && !res.cannot) g += '<div class="bad">\u2717 ChatGPT made no change' + (res.message ? ': ' + esc(res.message) : '.') + '</div>';
+    el('cmdnote').innerHTML = g;
+    if(ops.length > r.bad && !res.cannot) el('cmd').value = '';
+  }, function(e){
+    el('cmdnote').innerHTML = h + failed.map(line).join('') + '<div class="bad">\u2717 ' +
+      esc(/fetch|network/i.test(e.message) ? 'ChatGPT could not be reached. Check the internet connection.' : e.message) + '</div>' +
+      notUnderstood('Not understood offline: ');
+  }).then(function(){ el('cmdgo').disabled = false; });
 }
 el('cmdgo').addEventListener('click', runCommands);
 el('cmdundo').addEventListener('click', function(){ el('cmd').value = 'undo'; runCommands(); });

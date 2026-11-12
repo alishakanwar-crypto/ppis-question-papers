@@ -317,4 +317,10 @@ then `g7.docx` in word mode, PDF to `~/cmdbox/`).
 
 ## Devin Secrets Needed
 
-None — the page is static with no backend, no login and no API keys.
+None for the page itself. Commands the offline rules miss (or fail on) go, when `#cmdai` is ticked,
+to `AI_URL` = `https://ppis-whatsapp-bot.fly.dev/api/qp/ai-fix` (route `app/routes/qp_ai.py` in
+whatsapp-bot-backend; the OpenAI key is a Fly secret there). It accepts only the github.io/localhost
+Origin, 20 requests/min/IP, and returns `{ops, message, cannot}`; the page applies ops via `AI_OPS`
+(Word mode: paragraph indexes into `AI_PARAS`; maker mode: `set_body`/`run`/`replace`). To test against a
+local backend, Playwright-route that URL to `localhost:<port>/api/qp/ai-fix` and send
+`Origin: https://alishakanwar-crypto.github.io`; abort the route to check the "could not be reached" path.

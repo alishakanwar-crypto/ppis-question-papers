@@ -1538,8 +1538,9 @@ function alignParas(ps, how){
 }
 function orParas(){ return wordParas().filter(function(p){ return OR_RE.test(wText(p)); }); }
 var ALIGN_NAME = { center:'centred', left:'left-aligned', right:'right-aligned', justify:'justified' };
+function isReplace(s){ return /^(?:replace|change|correct|spell|make)\b.*\s(?:with|by|into|to)\s/i.test(s) && !/\bto\s+(?:the\s+)?(?:centre|center|middle|left|right)\b/i.test(s); }
 function alignCommand(s){
-  if(/^(?:replace|correct|spell)\b|\b(?:with|by|into)\b/i.test(s)) return null;
+  if(isReplace(s)) return null;
   var how = /justif/i.test(s) ? 'justify' : /\bleft\b/i.test(s) ? 'left' : /\bright\b/i.test(s) ? 'right' :
             /cent(?:re|er|ral)|\bmiddle\b/i.test(s) ? 'center' : null;
   if(!how) return null;
@@ -1699,14 +1700,15 @@ var COMMANDS = [
     if(wordMode()) return 'Box 1 now says ' + k + ' "' + v + '". It is used for the PDF name and the checker; the Word layout keeps the header as typed in Word.';
     return 'The ' + k + ' is now "' + v + '".';
   }],
-  [/\bcut\s*-?\s*off\b|\bcut\b|\bclipped\b|\bmissing\s+(?:letters|text|words)\b|\b(?:out|outside|beyond|into)\s+(?:of\s+)?(?:the\s+)?(?:margin|border|edge)\b/i, function(){
+  [/\bcut\s*-?\s*off\b|\bcut\b|\bclipped\b|\bmissing\s+(?:letters|text|words)\b|\b(?:out|outside|beyond|into)\s+(?:of\s+)?(?:the\s+)?(?:margin|border|edge)\b/i, function(m, s){
+    if(isReplace(s)) return null;
     if(!wordMode()) return 'Nothing is cut off in the maker\'s own layout.';
     var n = fixCutOff(el('wordbody'));
     return n ? n + ' line' + (n === 1 ? '' : 's') + ' pulled back inside the margin.' : 'Nothing runs into the margin now.';
   }],
   [/\b(?:centr\w*|center\w*|middle|align\w*|left|right|justif\w*)\b/i, function(m, s){ return alignCommand(s); }],
-  [/^(?:format|tidy|clean|arrange|set|fix|correct|make)\b.*\b(?:properly|correctly|neatly|nicely|neat|tidy|formatting|format|layout)\b|^(?:format|tidy\s+up|clean\s+up)(?:\s+(?:the\s+|all\s+(?:the\s+)?)?(?:paper|questions?|everything|it|all))?$/i, function(){
-    return formatPaper();
+  [/^(?:format|tidy|clean|arrange|set|fix|correct|make)\b.*\b(?:properly|correctly|neatly|nicely|neat|tidy|formatting|format|layout)\b|^(?:format|tidy\s+up|clean\s+up)(?:\s+(?:the\s+|all\s+(?:the\s+)?)?(?:paper|questions?|everything|it|all))?$/i, function(m, s){
+    return isReplace(s) ? null : formatPaper();
   }],
   [/^(?:replace|change|correct|spell|make)\s+["\u201c\u2018']?(.+?)["\u201d\u2019']?\s+(?:with|to|by|into|as)\s+["\u201c\u2018']?(.+?)["\u201d\u2019']?$/i, function(m){
     var from = m[1], to = m[2], n = 0, ci = false;

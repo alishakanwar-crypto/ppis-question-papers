@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PPIS English Answer Checker</title>
+<meta name="theme-color" content="#7a1020">
+<style>
+:root{--red:#d0021b;--ink:#1d2433;--mute:#667085;--line:#e4e7ec;--bg:#f6f7f9}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+header{display:flex;align-items:center;gap:10px;padding:12px 14px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header img{height:40px}
+header h1{font-size:18px;margin:0;line-height:1.2}
+header small{display:block;color:var(--mute);font-weight:400;font-size:12px}
+main{max-width:900px;margin:0 auto;padding:12px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px}
+label{display:block;font-size:13px;color:var(--mute);margin:0 0 4px}
+select,input[type=text]{width:100%;font-size:16px;padding:10px;border:1px solid #cfd4dc;border-radius:10px;background:#fff}
+.row{display:grid;grid-template-columns:110px 1fr;gap:10px}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+button,.btn{font:inherit;font-weight:600;border:0;border-radius:12px;padding:14px 10px;cursor:pointer;text-align:center}
+.primary{background:var(--red);color:#fff;font-size:17px}
+.ghost{background:#eef0f3;color:var(--ink)}
+.small{padding:8px 12px;font-size:14px;border-radius:9px}
+input[type=file]{display:none}
+.note{font-size:12px;color:var(--mute);margin:10px 0 0}
+.sum{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{border:1px solid #f3b6be;color:var(--red);background:#fff5f6;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600}
+.chip.total{background:var(--red);color:#fff;border-color:var(--red)}
+.page h2{font-size:16px;margin:0 0 8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.status{font-size:14px;color:var(--mute)}
+.status.err{color:var(--red)}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid #ccc;border-top-color:var(--red);border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes s{to{transform:rotate(360deg)}}
+canvas{width:100%;height:auto;border-radius:8px;display:block;background:#eee}
+ol.errs{list-style:none;margin:10px 0 0;padding:0}
+ol.errs li{display:grid;grid-template-columns:28px 1fr auto;gap:8px;align-items:start;padding:9px 0;border-top:1px solid var(--line)}
+.n{width:24px;height:24px;border-radius:50%;background:var(--red);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.w{color:var(--red);text-decoration:line-through;font-weight:600}
+.c{color:#067647;font-weight:700}
+.t{font-size:12px;color:var(--red);font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+.why{font-size:13px;color:var(--mute)}
+.x{background:none;border:1px solid var(--line);border-radius:8px;color:var(--mute);padding:4px 8px;font-size:13px}
+.off{opacity:.35}
+.off .w{text-decoration:none}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+details{margin-top:8px;font-size:14px}
+details pre{white-space:pre-wrap;font:14px/1.5 inherit;background:#fafafa;border-radius:8px;padding:8px;margin:6px 0 0}
+.top{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.hide{display:none!important}
+@media print{
+  header,.setup,.tools,.x,.noprint{display:none!important}
+  body{background:#fff}
+  main{max-width:none;padding:0}
+  .card{border:0;padding:0;break-after:page}
+  canvas{border-radius:0;max-height:none}
+  ol.errs li.off{display:none}
+}
+</style>
+</head>
+<body>
+<header>
+  <img src="ppis-logo.png" alt="PPIS">
+  <h1>English Answer Checker<small>P.P. International School</small></h1>
+</header>
+<main>
+  <section class="card setup">
+    <div class="row">
+      <div><label for="grade">Class</label>
+        <select id="grade"><option value="">Any</option>
+          <option>I</option><option>II</option><option>III</option><option>IV</option><option>V</option><option>VI</option>
+          <option>VII</option><option>VIII</option><option>IX</option><option>X</option><option>XI</option><option>XII</option></select></div>
+      <div><label for="question">Question or topic (optional)</label>
+        <input id="question" type="text" placeholder="e.g. Letter to a friend about your holidays"></div>
+    </div>
+    <div class="btns">
+      <label class="btn primary" for="cam">&#128247; Scan page</label>
+      <label class="btn ghost" for="pick">&#128444; Choose photos</label>
+    </div>
+    <input id="cam" type="file" accept="image/*" capture="environment">
+    <input id="pick" type="file" accept="image/*" multiple>
+    <p class="note">Hold the phone straight over the page in good light, with the whole page in view. Each photo goes to the school server and ChatGPT to be read, and nothing is saved. Tap &#10005; to remove any mark you don't agree with.</p>
+  </section>
+
+  <section id="overall" class="card hide noprint">
+    <div class="top">
+      <strong id="ovtitle">All pages</strong>
+      <div class="tools" style="margin:0">
+        <button class="ghost small" id="toggle">Hide marks</button>
+        <button class="ghost small" id="pdf">Save all as PDF</button>
+        <button class="ghost small" id="clear">Clear</button>
+      </div>
+    </div>
+    <div class="sum" id="ovsum"></div>
+  </section>
+
+  <div id="pages"></div>
+</main>
+<script>
+const API = (new URLSearchParams(location.search).get('api') || 'https://ppis-whatsapp-bot.fly.dev').replace(/\/$/, '');
+const TYPES = ['Spelling', 'Punctuation', 'Capitalisation', 'Grammar', 'Usage'];
+const LABEL = {Spelling: 'Spelling', Punctuation: 'Punctuation', Capitalisation: 'Capitals', Grammar: 'Grammar', Usage: 'Word use'};
+const MAX = 2000;
+const pages = [];
+let showMarks = true, queue = Promise.resolve();
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+
+async function loadImage(file) {
+  let src;
+  try { src = await createImageBitmap(file, {imageOrientation: 'from-image'}); }
+  catch (e) {
+    src = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = URL.createObjectURL(file); });
+  }
+  const w = src.width, h = src.height, s = Math.min(1, MAX / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * s); c.height = Math.round(h * s);
+  c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
+
+function addFiles(files) {
+  for (const f of files) {
+    const p = {id: pages.length + 1, status: 'Reading the photo…', busy: true, errors: [], lines: []};
+    pages.push(p);
+    renderPage(p);
+    queue = queue.then(() => check(p, f));
+  }
+  $('#overall').classList.remove('hide');
+}
+
+async function check(p, file) {
+  try {
+    p.img = await loadImage(file);
+    draw(p);
+    p.status = 'Checking spelling, punctuation and grammar…';
+    renderPage(p);
+    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 150000);
+    const r = await fetch(API + '/api/answer-check', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, signal: ctl.signal,
+      body: JSON.stringify({image: p.img.toDataURL('image/jpeg', 0.85), grade: $('#grade').value, question: $('#question').value})
+    });
+    clearTimeout(tm);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || 'The school server did not answer. Please try again.');
+    p.errors = (d.errors || []).map(e => Object.assign(e, {on: true}));
+    p.lines = d.lines || [];
+    p.status = d.note || (p.errors.length ? '' : 'No errors found on this page.');
+    p.busy = false;
+  } catch (e) {
+    p.busy = false; p.failed = true;
+    p.status = e.name === 'AbortError' ? 'This took too long. Please try the photo again.' : (e.message || 'Something went wrong. Please try again.');
+  }
+  renderPage(p); draw(p); summary();
+}
+
+function numbered(p) { let n = 0; return p.errors.map(e => e.on ? ++n : 0); }
+
+function draw(p) {
+  const cv = document.getElementById('cv' + p.id);
+  if (!cv || !p.img) return;
+  cv.width = p.img.width; cv.height = p.img.height;
+  const g = cv.getContext('2d');
+  g.drawImage(p.img, 0, 0);
+  if (!showMarks) return;
+  const W = cv.width, H = cv.height, lw = Math.max(3, W / 380), nums = numbered(p), used = [];
+  const hit = (a) => used.some(b => a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]);
+  p.errors.forEach((e, i) => {
+    if (!e.on || !e.box) return;
+    const [x, y, w, h] = [e.box[0] * W, e.box[1] * H, e.box[2] * W, e.box[3] * H];
+    const pad = lw * 1.5;
+    g.strokeStyle = '#e00016'; g.lineWidth = lw;
+    g.strokeRect(x - pad, y - pad, w + 2 * pad, h + 2 * pad);
+    const fs = Math.max(W / 55, Math.min(h * 0.7, W / 28));
+    g.font = `bold ${fs}px system-ui, Arial, sans-serif`;
+    const label = e.correct ? e.correct : '✗';
+    const tw = g.measureText(label).width;
+    const bw = tw + fs * 1.2 + 8, bh = fs * 1.2;
+    let tx = Math.min(Math.max(0, x), W - bw), ty = y - pad - fs * 0.25;
+    const spots = [[tx, ty], [tx, y + h + pad + fs], [Math.min(x + w + pad, W - bw), y + h * 0.5 + fs * 0.4], [tx, ty - bh]];
+    for (const [sx, sy] of spots) {
+      if (sy - fs >= 0 && sy < H && !hit([sx - 3, sy - fs, bw, bh])) { tx = sx; ty = sy; break; }
+    }
+    if (ty - fs < 0) ty = y + h + pad + fs;
+    used.push([tx - 3, ty - fs, bw, bh]);
+    g.fillStyle = 'rgba(255,255,255,.85)';
+    g.fillRect(tx - 3, ty - fs, bw, bh);
+    const r = fs * 0.5;
+    g.fillStyle = '#e00016';
+    g.beginPath(); g.arc(tx + r, ty - fs * 0.38, r, 0, 7); g.fill();
+    g.fillStyle = '#fff'; g.font = `bold ${fs * 0.62}px system-ui, Arial, sans-serif`; g.textAlign = 'center';
+    g.fillText(nums[i], tx + r, ty - fs * 0.17);
+    g.textAlign = 'left'; g.fillStyle = '#e00016'; g.font = `bold ${fs}px system-ui, Arial, sans-serif`;
+    g.fillText(label, tx + r * 2 + 6, ty);
+  });
+}
+
+function counts(list) {
+  const c = {}; TYPES.forEach(t => c[t] = 0);
+  list.forEach(e => { if (e.on) c[e.type] = (c[e.type] || 0) + 1; });
+  return c;
+}
+function chips(list) {
+  const c = counts(list), total = Object.values(c).reduce((a, b) => a + b, 0);
+  return `<span class="chip total">${total} error${total === 1 ? '' : 's'}</span>` +
+    TYPES.filter(t => c[t]).map(t => `<span class="chip">${LABEL[t]}: ${c[t]}</span>`).join('');
+}
+
+function renderPage(p) {
+  let el = document.getElementById('pg' + p.id);
+  if (!el) {
+    el = document.createElement('section'); el.className = 'card page'; el.id = 'pg' + p.id;
+    el.innerHTML = `<h2><span>Page ${p.id}</span><span class="tools" style="margin:0"></span></h2>
+      <div class="status"></div><canvas id="cv${p.id}"></canvas><div class="sum"></div><ol class="errs"></ol><div class="more"></div>`;
+    $('#pages').prepend(el);
+    if (p.img) draw(p);
+  }
+  const st = el.querySelector('.status');
+  st.className = 'status' + (p.failed ? ' err' : '');
+  st.innerHTML = (p.busy ? '<span class="spin"></span>' : '') + esc(p.status || '');
+  el.querySelector('h2 .tools').innerHTML = p.busy ? '' :
+    (p.failed ? '' : `<button class="ghost small noprint" data-save="${p.id}">Save marked page</button>`) +
+    `<button class="ghost small noprint" data-del="${p.id}">Remove</button>`;
+  el.querySelector('.sum').innerHTML = (!p.busy && !p.failed && p.errors.length) ? chips(p.errors) : '';
+  const nums = numbered(p);
+  el.querySelector('ol.errs').innerHTML = p.errors.map((e, i) => `
+    <li class="${e.on ? '' : 'off'}">
+      <span class="n">${e.on ? nums[i] : ''}</span>
+      <div><div class="t">${LABEL[e.type] || e.type}${e.box ? '' : ' · not boxed'}</div>
+        <div>${e.wrong ? `<span class="w">${esc(e.wrong)}</span> → ` : '<span class="why">missing:</span> '}<span class="c">${esc(e.correct)}</span></div>
+        <div class="why">${esc(e.why)}</div></div>
+      <button class="x" data-tog="${p.id}:${i}">${e.on ? '✕' : 'Undo'}</button>
+    </li>`).join('');
+  el.querySelector('.more').innerHTML = p.lines.length ?
+    `<details class="noprint"><summary>What the checker read</summary><pre>${esc(p.lines.join('\n'))}</pre></details>` : '';
+}
+
+function summary() {
+  const done = pages.filter(p => !p.busy && !p.failed);
+  $('#ovtitle').textContent = pages.length === 1 ? '1 page' : pages.length + ' pages';
+  $('#ovsum').innerHTML = done.length ? chips(done.flatMap(p => p.errors)) : '';
+  if (!pages.length) $('#overall').classList.add('hide');
+}
+
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('button'); if (!b) return;
+  if (b.dataset.tog) {
+    const [pid, i] = b.dataset.tog.split(':').map(Number), p = pages.find(q => q.id === pid);
+    p.errors[i].on = !p.errors[i].on; renderPage(p); draw(p); summary();
+  } else if (b.dataset.save) {
+    const p = pages.find(q => q.id === +b.dataset.save), cv = document.getElementById('cv' + p.id);
+    cv.toBlob(bl => { const a = document.createElement('a'); a.href = URL.createObjectURL(bl); a.download = `checked-page-${p.id}.jpg`; a.click(); }, 'image/jpeg', 0.9);
+  } else if (b.dataset.del) {
+    const i = pages.findIndex(q => q.id === +b.dataset.del);
+    document.getElementById('pg' + pages[i].id).remove(); pages.splice(i, 1); summary();
+  }
+});
+$('#cam').onchange = e => { addFiles(e.target.files); e.target.value = ''; };
+$('#pick').onchange = e => { addFiles(e.target.files); e.target.value = ''; };
+$('#toggle').onclick = () => { showMarks = !showMarks; $('#toggle').textContent = showMarks ? 'Hide marks' : 'Show marks'; pages.forEach(draw); };
+$('#pdf').onclick = () => window.print();
+$('#clear').onclick = () => { if (confirm('Remove all checked pages?')) { pages.length = 0; $('#pages').innerHTML = ''; summary(); } };
+</script>
+</body>
+</html>

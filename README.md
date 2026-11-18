@@ -27,3 +27,14 @@ one per line or joined with "and". They are worked out in the page by fixed rule
 is sent anywhere); anything not understood is listed in red. On a Word paper kept in its own layout the
 change is made to that layout too (sizes scale the whole paper from Word's own body size), so its boxes and
 pictures stay.
+
+## English Answer Checker
+
+`checker.html` (live: https://alishakanwar-crypto.github.io/ppis-question-papers/checker.html) is a
+phone page for marking students' handwritten English. Scan a notebook page or answer sheet with the
+camera; each photo is sent to the school server (`POST /api/answer-check` on `ppis-whatsapp-bot`),
+which boxes every handwritten word, asks ChatGPT to read the page and list the spelling,
+punctuation, capital-letter, grammar and word-use errors, and returns them with their positions.
+The page draws each error in red on the photo with the correction, lists them with a short reason,
+lets the teacher remove any mark with ✕, and saves the marked page as a JPG or all pages as a PDF.
+Photos are not stored. Add `?api=http://127.0.0.1:8077` to test against a local server.

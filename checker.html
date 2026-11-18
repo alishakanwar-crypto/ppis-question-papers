@@ -103,7 +103,7 @@ const TYPES = ['Spelling', 'Punctuation', 'Capitalisation', 'Grammar', 'Usage'];
 const LABEL = {Spelling: 'Spelling', Punctuation: 'Punctuation', Capitalisation: 'Capitals', Grammar: 'Grammar', Usage: 'Word use'};
 const MAX = 2000;
 const pages = [];
-let showMarks = true, queue = Promise.resolve();
+let showMarks = true, queue = Promise.resolve(), nextId = 1;
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 
@@ -122,7 +122,7 @@ async function loadImage(file) {
 
 function addFiles(files) {
   for (const f of files) {
-    const p = {id: pages.length + 1, status: 'Reading the photo…', busy: true, errors: [], lines: []};
+    const p = {id: nextId++, status: 'Reading the photo…', busy: true, errors: [], lines: []};
     pages.push(p);
     renderPage(p);
     queue = queue.then(() => check(p, f));
@@ -213,7 +213,7 @@ function renderPage(p) {
     el = document.createElement('section'); el.className = 'card page'; el.id = 'pg' + p.id;
     el.innerHTML = `<h2><span>Page ${p.id}</span><span class="tools" style="margin:0"></span></h2>
       <div class="status"></div><canvas id="cv${p.id}"></canvas><div class="sum"></div><ol class="errs"></ol><div class="more"></div>`;
-    $('#pages').prepend(el);
+    $('#pages').append(el);
     if (p.img) draw(p);
   }
   const st = el.querySelector('.status');
@@ -227,7 +227,7 @@ function renderPage(p) {
   el.querySelector('ol.errs').innerHTML = p.errors.map((e, i) => `
     <li class="${e.on ? '' : 'off'}">
       <span class="n">${e.on ? nums[i] : ''}</span>
-      <div><div class="t">${LABEL[e.type] || e.type}${e.box ? '' : ' · not boxed'}</div>
+      <div><div class="t">${esc(LABEL[e.type] || e.type)}${e.box ? '' : ' · not boxed'}</div>
         <div>${e.wrong ? `<span class="w">${esc(e.wrong)}</span> → ` : '<span class="why">missing:</span> '}<span class="c">${esc(e.correct)}</span></div>
         <div class="why">${esc(e.why)}</div></div>
       <button class="x" data-tog="${p.id}:${i}">${e.on ? '✕' : 'Undo'}</button>
@@ -260,7 +260,7 @@ $('#cam').onchange = e => { addFiles(e.target.files); e.target.value = ''; };
 $('#pick').onchange = e => { addFiles(e.target.files); e.target.value = ''; };
 $('#toggle').onclick = () => { showMarks = !showMarks; $('#toggle').textContent = showMarks ? 'Hide marks' : 'Show marks'; pages.forEach(draw); };
 $('#pdf').onclick = () => window.print();
-$('#clear').onclick = () => { if (confirm('Remove all checked pages?')) { pages.length = 0; $('#pages').innerHTML = ''; summary(); } };
+$('#clear').onclick = () => { if (confirm('Remove all checked pages?')) { pages.length = 0; nextId = 1; $('#pages').innerHTML = ''; summary(); } };
 </script>
 </body>
 </html>

@@ -133,6 +133,7 @@ function addFiles(files) {
 async function check(p, file) {
   try {
     p.img = await loadImage(file);
+    if (!pages.includes(p)) return;
     draw(p);
     p.status = 'Checking spelling, punctuation and grammar…';
     renderPage(p);
@@ -150,8 +151,11 @@ async function check(p, file) {
     p.busy = false;
   } catch (e) {
     p.busy = false; p.failed = true;
-    p.status = e.name === 'AbortError' ? 'This took too long. Please try the photo again.' : (e.message || 'Something went wrong. Please try again.');
+    p.status = e.name === 'AbortError' ? 'This took too long. Please try the photo again.'
+      : e instanceof TypeError ? 'Could not reach the school server. Check the internet and try again.'
+      : (e.message || 'Something went wrong. Please try again.');
   }
+  if (!pages.includes(p)) return;
   renderPage(p); draw(p); summary();
 }
 
